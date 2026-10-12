@@ -1,0 +1,31 @@
+# --- segredos e dados do seu robô/casa (NUNCA versionar) ---
+.env
+data/
+dump.json
+tests/fixtures/
+prints_app/
+*.pcapng
+*.etl
+cloud-session.json
+robots.json
+
+# --- ferramentas de terceiros e artefatos locais ---
+win-mirobo-*/
+__pycache__/
+*.pyc
+.claude/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# --- defesa em profundidade: cópias de segurança e dados mesmo fora de data/ ---
+/data-*/
+*.h50bak
+*.db
+*.db-wal
+*.db-shm
+app.json
+secret.key
+notify.json
+settings.json

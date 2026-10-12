@@ -1,0 +1,13 @@
+.git
+.github
+.env
+data/
+tests/
+tools/
+docs/
+prints_app/
+win-mirobo-*/
+dump.json
+*.pcapng
+*.etl
+__pycache__/

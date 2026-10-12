@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar · H50 Console</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#2f6fde">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#6b7385; --line:#e3e6ec; --accent:#2f6fde; --accent-text:#fff; --bad:#d64545; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --panel:#1c2028; --text:#e6e8ee; --muted:#9098a9; --line:#2c313c; --accent:#5b8ff0; --accent-text:#0d1220; --bad:#ef6b6b; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; } p { margin: 6px 0 14px; color: var(--muted); }
+  form { display: grid; gap: 12px; } label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  input { font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  button { font: inherit; padding: 11px; border-radius: 999px; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .6; cursor: default; }
+  .err { color: var(--bad); min-height: 1.3em; font-size: 14px; margin: 0; }
+  code { background: var(--bg); padding: 1px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">H50 Console</h1>
+  <p id="sub">Carregando…</p>
+  <form id="form" hidden>
+    <label id="code-box" hidden>Código de primeiro acesso
+      <input id="code" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX"></label>
+    <label>Senha <input id="pw" type="password" autocomplete="current-password" required></label>
+    <label id="pw2-box" hidden>Repita a senha <input id="pw2" type="password" autocomplete="new-password"></label>
+    <p class="err" id="err" role="alert"></p>
+    <button id="go" type="submit">Entrar</button>
+  </form>
+</main>
+<script src="/login.js"></script>
+</body>
+</html>

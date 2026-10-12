@@ -1,0 +1,8 @@
+# HTTPS automático com Caddy (https://caddyserver.com), na frente do app:
+#   H50_TRUST_PROXY=true  H50_COOKIE_SECURE=true  (no ambiente do app)
+h50.exemplo.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8050 {
+		flush_interval -1          # não segura o fluxo de eventos (SSE)
+	}
+}

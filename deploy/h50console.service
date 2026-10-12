@@ -1,0 +1,34 @@
+# Instalação em Linux (Raspberry Pi, mini-PC, NAS):
+#   sudo useradd --system --home /var/lib/h50console --shell /usr/sbin/nologin h50
+#   sudo git clone <repositorio> /opt/h50console
+#   sudo cp deploy/h50console.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now h50console
+#   journalctl -u h50console -f        # mostra o código de primeiro acesso
+[Unit]
+Description=H50 Console (painel local para robos Xiaomi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=h50
+WorkingDirectory=/opt/h50console
+Environment=H50_DATA_DIR=/var/lib/h50console
+Environment=H50_HOST=0.0.0.0
+# opcional: H50_PASSWORD, H50_PORT, H50_TRUST_PROXY=true, H50_COOKIE_SECURE=true
+EnvironmentFile=-/etc/h50console.env
+ExecStart=/usr/bin/python3 -m h50console
+Restart=on-failure
+RestartSec=5
+StateDirectory=h50console
+StateDirectoryMode=0700
+
+# endurecimento
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/h50console
+
+[Install]
+WantedBy=multi-user.target

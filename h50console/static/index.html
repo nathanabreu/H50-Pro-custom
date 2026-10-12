@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>H50 Console</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#2f6fde">
+<meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<header class="top">
+  <div class="ident">
+    <h1 id="name" title="Clique para renomear">H50 Console</h1>
+    <select id="robot-select" class="robot-select" hidden aria-label="Robô"></select>
+    <span id="conn-sub" class="muted small">conectando…</span>
+  </div>
+  <div class="conn"><span id="dot" class="dot"></span><span id="conn" class="muted small"></span></div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<nav class="tabs" id="tabs">
+  <a href="#inicio">Início</a>
+  <a href="#robos">Robôs</a>
+  <a href="#dashboards">Dashboards</a>
+  <a href="#historico">Histórico</a>
+  <a href="#consumiveis">Consumíveis</a>
+  <a href="#configuracoes">Configurações</a>
+  <a href="#diagnostico">Diagnóstico</a>
+  <a href="#manutencao">Manutenção</a>
+  <a href="#laboratorio">Laboratório</a>
+</nav>
+
+<main>
+  <!-- Início: espelha a tela principal do app Xiaomi Home -->
+  <section id="inicio">
+    <div id="onboarding" class="card" hidden></div>
+    <div class="home">
+      <div class="home-map card">
+        <div class="chips" id="chips"></div>
+        <div id="home-map" data-maxh="0.62"></div>
+        <p id="map-hover" class="muted small center">&nbsp;</p>
+        <div id="cloud-connect" hidden>
+          <p class="muted">O mapa fica na nuvem Xiaomi. Conecte com o QR code: abra o <strong>Xiaomi Home</strong> no celular,
+            toque em <em>escanear</em> e confirme. Nenhuma senha passa por este app.</p>
+          <div class="bar center"><button id="qr-start" class="primary">Gerar QR code</button><span id="cloud-state" class="muted small"></span></div>
+          <div id="qr-box" class="center" hidden>
+            <img id="qr-img" alt="QR code de login Xiaomi" width="220" height="220">
+            <p class="small muted">Vale 5 minutos. <a id="qr-link" target="_blank" rel="noopener">Abrir em outra aba</a></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-side">
+        <div class="row2">
+          <button class="tile" id="btn-station"><span class="tile-title">Estação</span><span class="tile-sub" id="sub-station"></span><span class="chev">›</span></button>
+          <button class="tile tile-primary" id="btn-start"><span class="tile-title" id="start-label">Iniciar limpeza</span><span class="tile-sub" id="start-sub"></span></button>
+        </div>
+        <div class="row2" id="active-row" hidden>
+          <button class="tile" id="btn-home"><span class="tile-title">Voltar à base</span></button>
+          <button class="tile" id="btn-stop"><span class="tile-title">Encerrar</span></button>
+        </div>
+        <p id="blocked" class="warn small" hidden></p>
+        <div class="row3">
+          <button class="tile" id="btn-area"><span class="tile-title">Área</span><span class="tile-sub" id="sub-area">Casa inteira</span><span class="chev">›</span></button>
+          <button class="tile" id="btn-modes"><span class="tile-title">Modos</span><span class="tile-sub" id="sub-modes"></span><span class="chev">›</span></button>
+          <button class="tile" id="btn-shortcuts"><span class="tile-title">Atalhos</span><span class="tile-sub" id="sub-shortcuts"></span><span class="chev">›</span></button>
+        </div>
+        <div class="card">
+          <div class="card-label">Limpeza personalizada</div>
+          <div id="custom-list"></div>
+        </div>
+        <button class="tile wide" id="btn-sched"><span class="tile-title">Limpeza programada</span><span class="tile-sub" id="sub-sched"></span><span class="chev">›</span></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="robos" hidden>
+    <h2>Conta Xiaomi</h2>
+    <div class="card" id="rb-cloud"></div>
+    <h2>Robôs</h2>
+    <div id="t-robots"></div>
+    <div class="bar"><button id="robot-add" class="primary">Adicionar robô</button></div>
+    <p class="muted small">Com a conta conectada, o app lista seus aparelhos, pega o token sozinho e acha o robô na rede
+      mesmo que o IP mude (pelo DID). Parear um robô novo no Wi-Fi continua sendo pelo app Xiaomi Home.</p>
+  </section>
+
+  <section id="dashboards" hidden>
+    <div class="bar" id="dash-range">
+      <span class="muted">Período</span>
+      <button data-days="1" data-hours="24">24 h</button>
+      <button data-days="7" data-hours="168" class="on">7 dias</button>
+      <button data-days="30" data-hours="720">30 dias</button>
+      <button data-days="90" data-hours="744">90 dias</button>
+    </div>
+    <div id="dash-body">
+      <h2>Limpezas</h2>
+      <div class="viz-tiles" id="d-tiles"></div>
+      <div class="viz-grid2">
+        <figure class="viz-card"><figcaption>Área limpa por dia (m²)</figcaption><div id="d-area"></div></figure>
+        <figure class="viz-card"><figcaption>Limpezas por cômodo ou rotina</figcaption><div id="d-rooms"></div></figure>
+        <figure class="viz-card"><figcaption>Tipo de limpeza</figcaption><div id="d-types"></div></figure>
+        <figure class="viz-card"><figcaption>Quando o robô limpa (início, dia × hora)</figcaption><div id="d-heat"></div></figure>
+      </div>
+      <h2>Bateria e status</h2>
+      <div class="viz-tiles" id="d-tiles2"></div>
+      <figure class="viz-card"><figcaption>Status ao longo do tempo</figcaption><div id="d-band"></div></figure>
+      <figure class="viz-card"><figcaption>Bateria (%)</figcaption><div id="d-battery"></div></figure>
+      <p class="muted small" id="d-note"></p>
+    </div>
+  </section>
+
+  <section id="historico" hidden>
+    <form class="bar" id="hist-filter">
+      <label>De <input type="date" name="from"></label>
+      <label>Até <input type="date" name="to"></label>
+      <label>Tipo <select name="type"><option value="">todos</option></select></label>
+      <button type="submit">Filtrar</button>
+      <button type="button" id="hist-sync" title="Busca o histórico completo do robô na nuvem Xiaomi">Sincronizar com a nuvem</button>
+    </form>
+    <div id="t-history"></div>
+    <p class="muted small">Pela rede local o histórico do robô (10/3) não chega: com mais de ~20 limpezas a resposta passa do limite
+      de ~1,4 KB que o robô consegue enviar. O app registra cada limpeza ao terminar e completa o resto pela nuvem Xiaomi
+      (fonte "robô"), na partida, depois de cada limpeza e a cada hora.</p>
+  </section>
+
+  <section id="consumiveis" hidden>
+    <div id="t-consumables"></div>
+  </section>
+
+  <section id="configuracoes" hidden>
+    <div class="card" id="sec-card">
+      <div class="card-label">Acesso ao painel</div>
+      <div class="bar">
+        <button id="sec-pw">Alterar senha</button>
+        <button id="sec-out">Sair deste aparelho</button>
+        <button id="sec-all">Sair de todos os aparelhos</button>
+      </div>
+      <p class="muted small" id="sec-note"></p>
+    </div>
+    <div class="card" id="notify-card" hidden></div>
+    <div id="t-settings"></div>
+  </section>
+
+  <section id="laboratorio" hidden>
+    <div class="seg lab-seg" id="lab-tabs"></div>
+    <p class="warn small" id="lab-raw-warn" hidden>Para escrever propriedades e executar ações, inicie o app com RAW_ENABLED=true. Leituras funcionam sempre.</p>
+    <div id="lab-body"></div>
+  </section>
+
+  <section id="manutencao" hidden>
+    <h2>Sistema</h2>
+    <div class="card" id="mt-about"></div>
+
+    <h2>Armazenamento e histórico</h2>
+    <div id="mt-robots"></div>
+    <div class="card">
+      <div class="bar">
+        <label>Guardar mudanças de propriedades por <input id="mt-days" type="number" min="7" max="3650" style="width:5em"> dias</label>
+        <button id="mt-days-save">Salvar</button>
+        <button id="mt-purge">Apagar o que passou do prazo</button>
+        <button id="mt-opt" title="Compacta o banco e devolve espaço ao disco">Otimizar bancos</button>
+      </div>
+      <p class="muted small">O histórico de limpezas, os consumíveis e as falhas nunca são apagados automaticamente.</p>
+    </div>
+
+    <h2>Backup</h2>
+    <div class="card">
+      <p class="muted small">O backup tem seus tokens e a sessão da conta Xiaomi, por isso é sempre criptografado com a senha abaixo.
+        Guarde a senha: sem ela o arquivo não abre.</p>
+      <form class="bar" id="mt-bk-form">
+        <input type="text" autocomplete="username" value="h50console" hidden aria-hidden="true">
+        <input id="mt-bk-pw" type="password" placeholder="Senha do backup (mín. 8)" autocomplete="new-password">
+        <label><input id="mt-bk-cloud" type="checkbox" checked> incluir a sessão da conta Xiaomi</label>
+        <button id="mt-backup" class="primary" type="submit">Baixar backup</button>
+      </form>
+      <form class="bar" id="mt-rs-form">
+        <input type="text" autocomplete="username" value="h50console" hidden aria-hidden="true">
+        <input id="mt-rs-file" type="file" accept=".h50bak">
+        <input id="mt-rs-pw" type="password" placeholder="Senha do backup" autocomplete="off">
+        <button id="mt-restore" type="submit">Restaurar…</button>
+      </form>
+    </div>
+
+    <h2>Exportar e diagnóstico</h2>
+    <div class="card"><div class="bar">
+      <button id="mt-csv">Histórico de limpezas (CSV)</button>
+      <button id="mt-support" title="Versões, estado e log sem tokens, DID nem IP completo: útil para relatar um problema">Pacote de diagnóstico</button>
+    </div></div>
+
+    <h2>Log do app</h2>
+    <div class="bar"><button id="mt-logs-refresh">Atualizar</button></div>
+    <pre id="mt-logs" class="out" style="max-height:320px;overflow:auto"></pre>
+  </section>
+
+  <section id="diagnostico" hidden>
+    <h2>Estado do robô</h2>
+    <div id="t-state"></div>
+    <h2>Nuvem Xiaomi</h2>
+    <div class="bar"><span id="cloud-info" class="muted"></span>
+      <button id="map-fetch">Atualizar mapa</button><span id="map-when" class="muted small"></span>
+      <button id="cloud-logout">Sair da nuvem</button></div>
+    <h2>Falhas</h2>
+    <div id="t-faults"></div>
+    <h2>Comandos enviados</h2>
+    <div id="t-commands"></div>
+    <h2>Cômodos e móveis</h2>
+    <div id="t-rooms"></div>
+    <div id="t-furniture"></div>
+    <div id="raw-box" hidden>
+      <h2>Explorador (siid/piid)</h2>
+      <form class="bar" id="raw-form">
+        <select name="op"><option value="get">get</option><option value="set">set</option><option value="action">action</option></select>
+        <input name="key" placeholder="2/2 ou 2/2,3/1" size="16" required>
+        <input name="value" placeholder="valor / params JSON" size="24">
+        <button type="submit">Enviar</button>
+      </form>
+      <pre id="raw-out" class="out"></pre>
+    </div>
+  </section>
+</main>
+
+<!-- menu que sobe de baixo, como os do app -->
+<dialog id="sheet" class="sheet">
+  <div class="sheet-title" id="sheet-title" tabindex="-1"></div>
+  <div class="sheet-body" id="sheet-body"></div>
+  <div class="sheet-foot" id="sheet-foot"></div>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="table.js"></script>
+<script src="charts.js"></script>
+<script src="map.js"></script>
+<script src="app.js"></script>
+<script src="robots.js"></script>
+<script src="maint.js"></script>
+<script src="lab.js"></script>
+<script src="notify.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# docker compose -f deploy/docker-compose.yml up -d --build      (rode na raiz do repositório)
+#
+# Rede: o app acha o robô na rede local por broadcast UDP e fala UDP/54321 com ele. No LINUX use network_mode: host
+# (abaixo). No Docker Desktop (Windows/macOS) o modo host não alcança a sua rede: troque por `ports:` e informe o IP
+# do robô; a descoberta por DID e o broadcast não funcionam nesse caso (o transporte pela nuvem continua valendo).
+services:
+  h50console:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: h50console:latest
+    container_name: h50console
+    restart: unless-stopped
+    network_mode: host                 # Linux. Pelo Docker Desktop: remova esta linha e use o bloco ports abaixo
+    # ports: ["127.0.0.1:8050:8050"]
+    environment:
+      H50_HOST: "0.0.0.0"
+      H50_PORT: "8050"
+      H50_PASSWORD: "${H50_PASSWORD:-}"        # opcional; vazio = código de primeiro acesso nos logs
+      H50_TRUST_PROXY: "${H50_TRUST_PROXY:-false}"
+      H50_COOKIE_SECURE: "${H50_COOKIE_SECURE:-false}"
+    volumes:
+      - ../data:/data                  # robots.json (tokens), bancos, sessão da nuvem: faça backup desta pasta
+    security_opt: ["no-new-privileges:true"]
