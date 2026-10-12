@@ -1,7 +1,8 @@
 """Notificações: ntfy, Telegram e webhook (só urllib, sem dependências).
 
 Eventos (por canal você escolhe quais quer): limpeza concluída, falha, tanque de água suja cheio, tanque de água
-limpa vazio, consumível acabando (< 10 %), robô sem resposta por 2 min e robô de volta.
+limpa vazio, consumível acabando (< 10 %), robô sem resposta por 2 min, robô de volta e robô parado/pausado por
+30 min (ou limpando há mais de 3 h).
 Os segredos (tópico do ntfy, token do Telegram, URL do webhook) ficam em <data>/notify.json (0600) e a API nunca
 os devolve inteiros. Mensagens iguais são agrupadas: 10 min entre repetições (24 h para consumíveis).
 """
@@ -30,9 +31,15 @@ EVENTS = {
     "consumable_low": "Consumível acabando (menos de 10 %)",
     "offline": "Robô sem resposta (2 min)",
     "online": "Robô voltou a responder",
+    "stuck": "Robô parado ou limpando por tempo demais",
 }
 TYPES = {"ntfy": "ntfy (app no celular)", "telegram": "Telegram", "webhook": "Webhook (JSON)"}
 OFFLINE_AFTER = 120
+STUCK_IDLE = (1, 5)             # parado ou pausado (fora da base, gastando bateria)
+STUCK_IDLE_AFTER = 30 * 60
+STUCK_CLEANING = (4, 16, 17)    # limpando
+STUCK_CLEANING_AFTER = 3 * 3600
+STUCK_REPEAT = 6 * 3600
 REPEAT_AFTER = 600
 CONSUMABLE_REPEAT = 24 * 3600
 CONSUMABLE_NAMES = {"mop": "Mop", "main_brush": "Escova principal", "side_brush": "Escova lateral",
@@ -156,6 +163,7 @@ class Notifier:
         self._last: dict[tuple, float] = {}
         self._offline_since: dict[str, float] = {}
         self._offline_sent: set[str] = set()
+        self._status_since: dict[str, tuple] = {}     # robô -> (código 2/2, desde quando)
         self._stop = threading.Event()
         self._lock = threading.Lock()
 
@@ -211,8 +219,23 @@ class Notifier:
                 self._offline_sent.discard(robot.cfg.id)
                 self.emit(robot, "online", "online", "O robô respondeu de novo.", 0)
 
+    def _check_stuck(self, robot) -> None:
+        status = robot.gw.cache.get("2/2")
+        now = self.clock()
+        prev = self._status_since.get(robot.cfg.id)
+        if prev is None or prev[0] != status:
+            self._status_since[robot.cfg.id] = (status, now)
+            return
+        for_s = now - prev[1]
+        if status in STUCK_IDLE and for_s >= STUCK_IDLE_AFTER:
+            self.emit(robot, "stuck:idle", "stuck", f"{catalog.label('2/2', status)} há {int(for_s // 60)} min, fora da base. "
+                      "Pode estar preso ou esquecido.", STUCK_REPEAT)
+        elif status in STUCK_CLEANING and for_s >= STUCK_CLEANING_AFTER:
+            self.emit(robot, "stuck:long", "stuck", f"Limpando há {int(for_s // 3600)} h seguidas. Confira se ele não está preso.", STUCK_REPEAT)
+
     def tick(self, robot) -> None:
-        """Confere o tempo sem resposta (chamado a cada poucos segundos)."""
+        """Confere o tempo sem resposta e o robô parado (chamado a cada poucos segundos)."""
+        self._check_stuck(robot)
         since = self._offline_since.get(robot.cfg.id)
         if since is not None and robot.cfg.id not in self._offline_sent and self.clock() - since >= OFFLINE_AFTER:
             self._offline_sent.add(robot.cfg.id)
@@ -223,11 +246,17 @@ class Notifier:
         q = robot.bus.subscribe()
 
         def loop():
+            last_tick = 0.0
             while not self._stop.is_set() and robot.fleet.robots.get(robot.cfg.id) is robot:   # robô removido/recarregado: encerra
+                if time.monotonic() - last_tick >= 5:           # eventos seguidos não podem impedir a checagem do relógio
+                    last_tick = time.monotonic()
+                    try:
+                        self.tick(robot)
+                    except Exception:  # noqa: BLE001
+                        log.exception("erro na checagem periódica")
                 try:
                     name, data = q.get(timeout=5)
-                except Exception:  # noqa: BLE001 - fila vazia: aproveita para conferir o relógio
-                    self.tick(robot)
+                except Exception:  # noqa: BLE001 - fila vazia
                     continue
                 try:
                     self.on_event(robot, name, data)

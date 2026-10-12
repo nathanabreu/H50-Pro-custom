@@ -197,3 +197,18 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .4); }
 .lab-seg { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); margin-bottom: 10px; }
 
 #notify-card { margin-bottom: 12px; }
+
+/* perfil somente leitura: o servidor já recusa qualquer comando; aqui só se esconde o que não funcionaria */
+body.viewer #tabs a[href="#robos"], body.viewer #tabs a[href="#diagnostico"], body.viewer #tabs a[href="#manutencao"],
+body.viewer #tabs a[href="#laboratorio"], body.viewer .home-side, body.viewer #hist-sync, body.viewer #t-consumables button,
+body.viewer #t-settings, body.viewer #notify-card, body.viewer #viewer-card, body.viewer #sec-pw, body.viewer #sec-all,
+body.viewer #onboarding, body.viewer #qr-start, body.viewer #cloud-connect .bar { display: none; }
+body.viewer .home { grid-template-columns: 1fr; }
+.badge-viewer { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2, rgba(128,128,128,.18)); }
+td button { white-space: nowrap; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main:focus { outline: none; }
+.skip { position: absolute; left: 8px; top: -48px; z-index: 50; padding: 8px 14px; border-radius: 999px; background: var(--accent); color: #fff; text-decoration: none; }
+.skip:focus { top: 8px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }

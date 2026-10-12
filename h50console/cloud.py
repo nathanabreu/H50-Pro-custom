@@ -107,7 +107,15 @@ class Cloud:
 
     def save(self, path: Path = SESSION_FILE) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.s, indent=1), encoding="utf-8")
+        tmp = path.with_name(path.name + ".tmp")        # tem ssecurity e serviceToken: só o dono lê, e a troca é atômica
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(self.s, indent=1))
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, path)
 
     # -- HTTP ------------------------------------------------------------------
     def _req(self, url: str, data: dict | None = None, headers: dict | None = None, cookies: dict | None = None):

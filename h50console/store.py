@@ -89,6 +89,16 @@ MIGRATIONS = [
       last_value TEXT
     );
     """,
+    # v3: caminho percorrido em cada limpeza (pontos [x, y, tipo] em mm, do mapa da nuvem)
+    """
+    CREATE TABLE cleaning_path (
+      stime      INTEGER PRIMARY KEY,
+      points     TEXT NOT NULL,
+      n_points   INTEGER NOT NULL,
+      final      INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -219,6 +229,36 @@ class Store:
         for r in rows:
             r["rooms"] = json.loads(r["rooms"]) if r["rooms"] else []
         return rows
+
+    # -- caminho percorrido ----------------------------------------------------------
+    def save_path(self, stime: int, points: list, final: bool = False) -> None:
+        """Grava (ou troca) o caminho da limpeza. Um caminho final nunca é trocado por um parcial."""
+        self._exec(
+            """INSERT INTO cleaning_path (stime, points, n_points, final, updated_at) VALUES (?,?,?,?,?)
+               ON CONFLICT(stime) DO UPDATE SET points=excluded.points, n_points=excluded.n_points,
+                 final=excluded.final, updated_at=excluded.updated_at
+               WHERE excluded.final=1 OR cleaning_path.final=0""",
+            (stime, json.dumps(points, separators=(",", ":")), len(points), int(final), iso()))
+
+    def get_path(self, stime: int) -> dict | None:
+        rows = self._query("SELECT stime, points, n_points, final, updated_at FROM cleaning_path WHERE stime=?", (stime,))
+        if not rows:
+            return None
+        r = rows[0]
+        return {"stime": r["stime"], "points": json.loads(r["points"]), "final": bool(r["final"]), "updated_at": r["updated_at"]}
+
+    def paths_since(self, start: int) -> list[dict]:
+        rows = self._query("SELECT stime, points FROM cleaning_path WHERE stime >= ? AND n_points > 1 ORDER BY stime", (start,))
+        return [{"stime": r["stime"], "points": json.loads(r["points"])} for r in rows]
+
+    def path_stimes(self) -> set[int]:
+        return {r["stime"] for r in self._query("SELECT stime FROM cleaning_path WHERE n_points > 1")}
+
+    def move_path(self, old: int, new: int) -> None:
+        """Passa o caminho gravado durante a limpeza (chave provisória) para o início oficial (2/17)."""
+        if old != new:
+            self._exec("DELETE FROM cleaning_path WHERE stime=? AND EXISTS (SELECT 1 FROM cleaning_path WHERE stime=?)", (old, new))
+            self._exec("UPDATE OR IGNORE cleaning_path SET stime=? WHERE stime=?", (new, old))
 
     # -- consumíveis -------------------------------------------------------------
     def snapshot_consumables(self, items: dict[str, tuple[int | None, int | None]], day: str | None = None) -> None:

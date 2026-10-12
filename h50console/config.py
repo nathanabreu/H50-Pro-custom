@@ -39,6 +39,9 @@ class Config:
     password: str = ""                 # H50_PASSWORD (Docker); senão a senha é criada no primeiro acesso
     trust_proxy: bool = False          # H50_TRUST_PROXY: só atrás de um proxy/túnel confiável
     cookie_secure: bool = False        # H50_COOKIE_SECURE: marca o cookie como Secure (HTTPS)
+    viewer_password: str = ""          # H50_VIEWER_PASSWORD: senha do perfil somente leitura (Docker)
+    metrics_token: str = ""            # H50_METRICS_TOKEN: libera /metrics (Prometheus) com 'Authorization: Bearer <token>'
+    allowed_hosts: tuple = ()          # H50_ALLOWED_HOSTS: nomes extras aceitos no Host (só vale em localhost sem proxy)
     # migração de instalações de um robô só (usados apenas se não houver robots.json)
     ip: str = ""
     token: str = ""
@@ -60,6 +63,8 @@ class Config:
             auth_enabled=e.get("H50_AUTH", "on").strip().lower() not in ("off", "false", "0", "no", "nao"),
             password=e.get("H50_PASSWORD", ""), trust_proxy=_bool(e.get("H50_TRUST_PROXY")),
             cookie_secure=_bool(e.get("H50_COOKIE_SECURE")),
+            viewer_password=e.get("H50_VIEWER_PASSWORD", ""), metrics_token=e.get("H50_METRICS_TOKEN", ""),
+            allowed_hosts=tuple(h.strip().lower() for h in e.get("H50_ALLOWED_HOSTS", "").split(",") if h.strip()),
             ip=e.get("H50_IP", ""), token=token, device_name=e.get("H50_NAME", ""),
         )
 

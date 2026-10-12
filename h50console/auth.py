@@ -13,10 +13,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 PBKDF2_ITERS = 600_000
@@ -25,6 +27,8 @@ MIN_PASSWORD = 8
 COOKIE = "h50s"
 MAX_FAILS = 5
 MAX_LOCK = 15 * 60
+MAX_TRACKED_IPS = 2000          # teto da tabela de tentativas (evita crescer sem limite sob varredura)
+log = logging.getLogger(__name__)
 
 
 class AuthError(Exception):
@@ -51,14 +55,16 @@ def is_loopback(host: str) -> bool:
 
 class Auth:
     def __init__(self, data_dir, *, enabled: bool = True, env_password: str = "", iters: int = PBKDF2_ITERS,
-                 clock=time.time):
+                 clock=time.time, viewer_password: str = ""):
         self.dir = Path(data_dir)
         self.enabled = enabled
         self.env_password = env_password
+        self.viewer_env = viewer_password
         self.iters = iters
         self.clock = clock
         self._lock = threading.Lock()
         self._fails: dict[str, tuple[int, float]] = {}            # ip -> (erros, bloqueado até)
+        self.activity: deque = deque(maxlen=100)                  # últimos acessos e falhas (só em memória)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / "app.json"
         self.cfg: dict = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
@@ -105,9 +111,41 @@ class Auth:
     def pwv(self) -> int:
         return int(self.cfg.get("pwv", 1))
 
-    def status(self, authenticated: bool) -> dict:
+    def status(self, authenticated: bool, role: str | None = None) -> dict:
         return {"enabled": self.enabled, "configured": self.configured,
-                "setup_required": self.enabled and not self.configured, "authenticated": authenticated}
+                "setup_required": self.enabled and not self.configured, "authenticated": authenticated,
+                "role": role if authenticated else None, "viewer_enabled": self.viewer_enabled}
+
+    # -- perfil só leitura -----------------------------------------------------------------------------------
+    @property
+    def viewer_enabled(self) -> bool:
+        return bool(self.viewer_env or self.cfg.get("viewer"))
+
+    @property
+    def vwv(self) -> int:
+        return int(self.cfg.get("vwv", 1))
+
+    def set_viewer_password(self, password: str) -> None:
+        """Senha do perfil somente leitura. Vazia = desliga o perfil. Invalida as sessões desse perfil."""
+        if self.viewer_env:
+            raise AuthError(409, "a senha do visualizador vem de H50_VIEWER_PASSWORD; altere a variável de ambiente")
+        if password and len(password) < MIN_PASSWORD:
+            raise AuthError(400, f"use uma senha com pelo menos {MIN_PASSWORD} caracteres")
+        if password and self._check_password(password):
+            raise AuthError(400, "a senha do visualizador não pode ser igual à do administrador")
+        if password:
+            self.cfg["viewer"] = hash_password(password, iters=self.iters)
+        else:
+            self.cfg.pop("viewer", None)
+        self.cfg["vwv"] = self.vwv + 1
+        self._save()
+        self.record("senha do visualizador " + ("definida" if password else "removida"))
+
+    def _check_viewer(self, password: str) -> bool:
+        if self.viewer_env:
+            return hmac.compare_digest(password.encode(), self.viewer_env.encode())
+        rec = self.cfg.get("viewer")
+        return bool(rec) and verify_password(password, rec)
 
     # -- limite de tentativas ----------------------------------------------------------------------------
     def _check_rate(self, ip: str) -> None:
@@ -117,8 +155,19 @@ class Auth:
         if left > 0:
             raise AuthError(429, f"muitas tentativas; tente de novo em {left} s", retry_after=left)
 
+    def record(self, event: str, ip: str = "", ok: bool = True) -> None:
+        self.activity.appendleft({"ts": int(self.clock()), "event": event, "ip": ip or "?", "ok": ok})
+        if not ok:
+            log.warning("acesso: %s (ip %s)", event, ip or "?")
+
     def _fail(self, ip: str) -> None:
+        self.record("senha ou código incorreto", ip, ok=False)
         with self._lock:
+            if len(self._fails) >= MAX_TRACKED_IPS:        # descarta quem já cumpriu o bloqueio
+                now = self.clock()
+                self._fails = {k: v for k, v in self._fails.items() if v[1] > now}
+                if len(self._fails) >= MAX_TRACKED_IPS:
+                    self._fails.pop(next(iter(self._fails)))
             n, _ = self._fails.get(ip, (0, 0.0))
             n += 1
             lock = 0.0 if n < MAX_FAILS else min(MAX_LOCK, 30 * 2 ** (n - MAX_FAILS))
@@ -150,28 +199,35 @@ class Auth:
         self._save()
         self.setup_code = None
         self._ok(ip)
+        self.record("senha criada", ip)
         return self.make_token()
 
     def login(self, password: str, ip: str = "") -> str:
         if not self.configured:
             raise AuthError(409, "primeiro acesso: crie a senha")
         self._check_rate(ip)
-        if not self._check_password(password or ""):
+        role = "admin" if self._check_password(password or "") else (
+            "viewer" if self.viewer_enabled and self._check_viewer(password or "") else None)
+        if not role:
             self._fail(ip)
             raise AuthError(401, "senha incorreta")
         self._ok(ip)
-        return self.make_token()
+        self.record("login" + (" (somente leitura)" if role == "viewer" else ""), ip)
+        return self.make_token(role)
 
-    def change_password(self, current: str, new: str) -> str:
+    def change_password(self, current: str, new: str, ip: str = "") -> str:
         if self.env_password:
             raise AuthError(409, "a senha vem de H50_PASSWORD; altere a variável de ambiente")
+        self._check_rate(ip)
         if not self._check_password(current or ""):
+            self._fail(ip)
             raise AuthError(401, "senha atual incorreta")
         if len(new or "") < MIN_PASSWORD:
             raise AuthError(400, f"use uma senha com pelo menos {MIN_PASSWORD} caracteres")
         self.cfg["password"] = hash_password(new, iters=self.iters)
         self.cfg["pwv"] = self.pwv + 1                 # invalida as outras sessões
         self._save()
+        self.record("senha alterada", ip)
         return self.make_token()
 
     def reset_password(self) -> None:
@@ -182,32 +238,43 @@ class Auth:
         self._save()
         self.setup_code = None if self.configured else self._new_code()
 
-    def revoke_all(self) -> str:
+    def revoke_all(self, ip: str = "") -> str:
         """Sai de todos os aparelhos (menos o atual, que recebe um token novo)."""
         self.cfg["pwv"] = self.pwv + 1
         self._save()
+        self.record("saiu de todos os aparelhos", ip)
         return self.make_token()
 
     # -- sessão -----------------------------------------------------------------------------------------------
-    def _sig(self, body: str) -> str:
-        key = self.secret + f":{self.pwv}".encode()
+    def _sig(self, body: str, role: str = "admin") -> str:
+        key = self.secret + f":{self.pwv}".encode() + (f":v{self.vwv}".encode() if role == "viewer" else b"")
         return hmac.new(key, body.encode(), hashlib.sha256).hexdigest()
 
-    def make_token(self) -> str:
+    def make_token(self, role: str = "admin") -> str:
         body = f"v1.{int(self.clock()) + SESSION_DAYS * 86400}.{secrets.token_hex(8)}"
-        return f"{body}.{self._sig(body)}"
+        if role == "viewer":
+            body = "v2" + body[2:] + ".viewer"
+        return f"{body}.{self._sig(body, role)}"
+
+    def role_of(self, token: str | None) -> str | None:
+        """'admin', 'viewer' ou None (token ausente, adulterado, vencido ou de sessão revogada)."""
+        if not token:
+            return None
+        parts = token.split(".")
+        if len(parts) == 4 and parts[0] == "v1":
+            role, body, sig, exp = "admin", ".".join(parts[:3]), parts[3], parts[1]
+        elif len(parts) == 5 and parts[0] == "v2" and parts[3] == "viewer":
+            role, body, sig, exp = "viewer", ".".join(parts[:4]), parts[4], parts[1]
+        else:
+            return None
+        if not hmac.compare_digest(sig, self._sig(body, role)):
+            return None
+        if role == "viewer" and not self.viewer_enabled:
+            return None
+        return role if exp.isdigit() and int(exp) > self.clock() else None
 
     def valid_token(self, token: str | None) -> bool:
-        if not token:
-            return False
-        try:
-            version, exp, nonce, sig = token.split(".")
-        except ValueError:
-            return False
-        body = f"{version}.{exp}.{nonce}"
-        if version != "v1" or not hmac.compare_digest(sig, self._sig(body)):
-            return False
-        return int(exp) > self.clock()
+        return self.role_of(token) is not None
 
     @staticmethod
     def cookie(token: str, secure: bool = False, clear: bool = False) -> str:

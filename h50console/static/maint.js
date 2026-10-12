@@ -23,6 +23,15 @@
       { key: "oldest", label: "Dados desde", render: (r) => r.oldest_change ? new Date(r.oldest_change).toLocaleDateString("pt-BR") : "—" },
     ], st.robots, { filters: false });
 
+    api("GET", "/api/auth/activity").then((a) => Table.render($("#mt-access"), [
+      { key: "ts", label: "Quando", render: (r) => new Date(r.ts * 1000).toLocaleString("pt-BR"), sortValue: (r) => r.ts },
+      { key: "event", label: "Evento" },
+      { key: "ip", label: "IP" },
+      { key: "ok", label: "Resultado", render: (r) => r.ok ? "ok" : "falhou", sortValue: (r) => r.ok ? 1 : 0 },
+    ], a.events, { sort: "ts", desc: true, rowClass: (r) => r.ok ? "" : "alert", filters: false })).catch(() => {
+      $("#mt-access").textContent = "Sem registro de acessos (o painel está sem senha).";
+    });
+
     $("#mt-days").value = st.retention_days;
     $("#mt-days-save").onclick = () => run("Retenção", async () => {
       await api("PUT", "/api/maintenance/retention", { days: Number($("#mt-days").value) });

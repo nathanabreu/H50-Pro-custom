@@ -53,6 +53,83 @@ class WebTests(unittest.TestCase):
             with ex:
                 return ex.code, json.loads(ex.read())
 
+    def test_history_path(self):
+        st, d = self.call("GET", "/api/history/path?stime=4242")
+        self.assertEqual(st, 404)
+        st, d = self.call("GET", "/api/history/path?stime=abc")
+        self.assertEqual(st, 400)
+        self.store.save_path(4242, [[0, 0, 1], [100, 50, 1], [200, 90, 0]], final=True)
+        self.store.upsert_cleaning(4242, 600, 3.0, 3, "derived")
+        st, d = self.call("GET", "/api/history/path?stime=4242")
+        self.assertEqual((st, len(d["points"]), d["final"]), (200, 3, True))
+        st, h = self.call("GET", "/api/history")
+        self.assertTrue(next(r for r in h["records"] if r["stime"] == 4242)["has_path"])
+        import time as _t
+        self.store.save_path(int(_t.time()) - 600, [[0, 0, 1], [400, 100, 1]], final=True)
+        st, cov = self.call("GET", "/api/dash/coverage?days=7")
+        self.assertEqual((st, cov["cleanings"]), (200, 1))
+        self.assertGreater(len(cov["cells"]), 0)
+        self.store._exec("DELETE FROM cleaning_record WHERE stime=4242")      # o store é compartilhado entre os testes
+        self.store._exec("DELETE FROM cleaning_path")
+
+    def raw_request(self, headers, body=b"", method="POST", path="/api/commands"):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.srv.server_address[1], timeout=5)
+        conn.putrequest(method, path, skip_host="Host" in headers)
+        for k, v in headers.items():
+            conn.putheader(k, v)
+        conn.endheaders(body)
+        res = conn.getresponse()
+        out = (res.status, dict(res.getheaders()), res.read())
+        conn.close()
+        return out
+
+    def test_hardening(self):
+        st, hdr, _ = self.raw_request({"Host": "evil.example"}, method="GET", path="/api/health")
+        self.assertEqual(st, 421)                                   # DNS rebinding
+        st, hdr, _ = self.raw_request({"Host": "localhost:8050"}, method="GET", path="/api/health")
+        self.assertEqual(st, 200)
+        self.assertEqual(hdr["Cross-Origin-Resource-Policy"], "same-origin")
+        self.assertIn("camera=()", hdr["Permissions-Policy"])
+        st, _, _ = self.raw_request({"Content-Length": "-5"})
+        self.assertEqual(st, 400)                                   # Content-Length inválido
+        st, _, _ = self.raw_request({"Content-Length": "abc"})
+        self.assertEqual(st, 400)
+        st, _, body = self.raw_request({"Content-Length": str(5 * 1024 * 1024), "X-H50": "1"})
+        self.assertEqual(st, 400)                                   # corpo acima do limite: recusa sem ler
+
+    def test_event_streams_are_capped(self):
+        import http.client
+        from h50console import web
+        old, web.MAX_STREAMS = web.MAX_STREAMS, 2
+        conns = []
+        try:
+            codes = []
+            for _ in range(3):
+                c = http.client.HTTPConnection("127.0.0.1", self.srv.server_address[1], timeout=5)
+                c.request("GET", "/api/stream")
+                r = c.getresponse()
+                codes.append(r.status)
+                conns.append(c)
+            self.assertEqual(codes, [200, 200, 429])
+        finally:
+            web.MAX_STREAMS = old
+            for c in conns:
+                c.close()
+
+    def test_metrics_prometheus_text(self):
+        st, hdr, body = self.raw_request({"Host": "127.0.0.1"}, method="GET", path="/metrics")
+        self.assertEqual(st, 200)
+        self.assertTrue(hdr["Content-Type"].startswith("text/plain"))
+        text = body.decode()
+        self.assertIn('h50_battery_percent{robot="rex"}', text)
+        self.assertIn("# TYPE h50_cleanings_total counter", text)
+        self.assertIn('h50_consumable_percent{robot="rex",item="mop"}', text)
+        self.assertNotIn("1000000001", text)                      # nada de DID
+        for line in text.splitlines():
+            if line and not line.startswith("#"):
+                float(line.rsplit(" ", 1)[1])                      # todo valor é número
+
     def test_state(self):
         st, d = self.call("GET", "/api/state")
         self.assertEqual(st, 200)

@@ -20,9 +20,10 @@
     return m.slice(0, 3);
   }
 
-  async function render(host, m, { onHover, onRoomClick, selected } = {}) {
+  async function render(host, m, { onHover, onRoomClick, selected, heat, dim } = {}) {
     const grid = m._grid || (m._grid = await inflate(m.grid_zlib_b64));
     const sel = selected && selected.size ? selected : null;   // com seleção, o resto fica apagado
+    const faint = dim && !sel;                                  // mapa de calor: cômodos quase apagados
     const W = m.width, H = m.height, res = m.resolution, [ox, oy] = m.origin;
 
     // recorte: caixa dos pixels não vazios + margem
@@ -49,7 +50,7 @@
       if (!v) continue;
       const i = ((r1 - r) * cw + (c - c0)) * 4;
       const rgb = v === 1 ? wallRGB : roomRGB[v] || floorRGB;
-      const a = v === 1 ? 230 : sel ? (sel.has(v) ? (dark ? 200 : 170) : 35) : dark ? 120 : 90;
+      const a = v === 1 ? 230 : sel ? (sel.has(v) ? (dark ? 200 : 170) : 35) : faint ? 28 : dark ? 120 : 90;
       img.data.set([rgb[0], rgb[1], rgb[2], a], i);
     }
     off.getContext("2d").putImageData(img, 0, 0);
@@ -62,6 +63,8 @@
     const cv = document.createElement("canvas");
     cv.style.width = `${cw * scale}px`; cv.style.height = `${ch * scale}px`;
     cv.width = Math.round(cw * scale * dpr); cv.height = Math.round(ch * scale * dpr);
+    cv.setAttribute("role", "img");
+    cv.setAttribute("aria-label", `Mapa da casa com ${m.rooms.length} cômodo(s): ${m.rooms.map((r) => r.name).filter(Boolean).join(", ")}`);
     const g = cv.getContext("2d");
     g.scale(dpr, dpr);
     g.imageSmoothingEnabled = false;
@@ -71,6 +74,15 @@
     const Y = (y) => (r1 - (y - oy) / res + 0.5) * scale;
     const ink = `rgb(${wallRGB.join(",")})`;
 
+    // mapa de calor: quantas limpezas passaram por cada quadrado (um tom só, mais escuro = mais vezes)
+    if (heat && heat.cells.length) {
+      const [hr, hg, hb] = cssColor("--s1");
+      for (const [cx, cy, n] of heat.cells) {
+        g.fillStyle = `rgba(${hr},${hg},${hb},${(0.15 + 0.7 * (n / heat.max)).toFixed(2)})`;
+        const x0 = X(cx), y0 = Y(cy + heat.cell);
+        g.fillRect(x0, y0, X(cx + heat.cell) - x0 + 0.5, Y(cy) - y0 + 0.5);
+      }
+    }
     // trajetória
     if (m.path.length > 1) {
       // tipo 1 = limpando, 0 = deslocamento; o caminho da base até a área vem como um salto sem pontos

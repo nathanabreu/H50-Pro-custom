@@ -45,11 +45,12 @@ def serve(cfg: Config) -> int:
     if not cfg.auth_enabled and not is_loopback(cfg.host):
         raise SystemExit(f"Recusado: H50_AUTH=off só é permitido em localhost (H50_HOST={cfg.host}). "
                          "Ative a senha (padrão) ou use H50_HOST=127.0.0.1.")
-    auth = Auth(cfg.data_dir, enabled=cfg.auth_enabled, env_password=cfg.password)
+    auth = Auth(cfg.data_dir, enabled=cfg.auth_enabled, env_password=cfg.password, viewer_password=cfg.viewer_password)
     fleet = _fleet(cfg, start_threads=True)     # robots.json; migra instalação antiga ou H50_IP/H50_TOKEN na 1ª vez
     notifier = Notifier(NotifyStore(cfg.data_dir / "notify.json"))
     hub = Hub(fleet, fleet.cloud, cfg.raw_enabled, auth=auth, ring=ring, notifier=notifier)
-    srv = make_server(hub, cfg.host, cfg.port, auth=auth, trust_proxy=cfg.trust_proxy, cookie_secure=cfg.cookie_secure)
+    srv = make_server(hub, cfg.host, cfg.port, auth=auth, trust_proxy=cfg.trust_proxy, cookie_secure=cfg.cookie_secure,
+                      extra_hosts=cfg.allowed_hosts, metrics_token=cfg.metrics_token)
 
     fleet.start_all()
     names = ", ".join(f"{r.cfg.name} ({r.cfg.transport})" for r in fleet.robots.values()) or "nenhum (cadastre na interface)"

@@ -13,7 +13,7 @@ import platform
 import sys
 import time
 
-from . import __version__, backup, catalog, maint, notify
+from . import __version__, backup, catalog, maint, metrics, notify
 from .events import EventBus
 from .fleet import SUPPORTED_MODELS, Fleet, RobotConfig, TRANSPORTS
 from .miio import MiioClient, MiioError, discover as lan_discover
@@ -98,6 +98,9 @@ class Hub:
         return {"version": self.version, "raw_enabled": self.raw_enabled, "robots": self.fleet.summaries(),
                 "cloud": self.cloud.status() if self.cloud else {"state": "none"},
                 "onboarding": not self.fleet.robots}
+
+    def metrics_text(self) -> str:
+        return metrics.render(list(self.fleet.robots.values()), self.version, self.started, time.time())
 
     def list_robots(self, **_):
         return self.fleet.summaries()

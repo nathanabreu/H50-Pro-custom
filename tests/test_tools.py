@@ -122,5 +122,19 @@ class Hook(unittest.TestCase):
             self.assertIn("ruim.txt", bad.stdout + bad.stderr)
 
 
+class Scrub(unittest.TestCase):
+    def test_diagnostic_log_scrubbing(self):
+        from h50console import maint
+        raw = ("erro em https://us.api.io.mi.com/app/home/device_list?serviceToken=abc123&x=1 do robô 192.168.1.42 "
+               "did 1000000001 token 00112233445566778899aabbccddeeff conta fulano@example.com senha=hunter22 cookie: a=b")
+        out = maint.scrub(raw)
+        for secret in ("192.168.1.42", "1000000001", "00112233445566778899aabbccddeeff", "fulano@example.com", "hunter22", "abc123",
+                       "device_list"):
+            self.assertNotIn(secret, out)
+        self.assertIn("192.168.1.x", out)
+        self.assertIn("https://us.api.io.mi.com/…", out)
+        self.assertEqual(maint.scrub("robô respondeu em 35 ms"), "robô respondeu em 35 ms")       # texto comum fica intacto
+
+
 if __name__ == "__main__":
     unittest.main()

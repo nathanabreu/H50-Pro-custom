@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,58 @@ WEEKDAYS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"]
 
 def _local(dt: datetime) -> datetime:
     return dt.astimezone()
+
+
+def consumable_forecast(history: list[dict], today=None) -> dict | None:
+    """Estima em quantos dias um consumível acaba, pelo ritmo de desgaste desde a última troca.
+
+    `history`: fotos diárias [{day, pct, hours}] em ordem. Uma troca aparece como a vida subindo: só vale o trecho depois dela.
+    Usa as horas restantes (mais finas que a % inteira). Precisa de pelo menos 2 dias de dados e de algum desgaste."""
+    if len(history) < 2:
+        return None
+    seg = [history[-1]]
+    for row in reversed(history[:-1]):
+        key = "hours" if row.get("hours") is not None and seg[-1].get("hours") is not None else "pct"
+        if row.get(key) is None or seg[-1].get(key) is None or row[key] < seg[-1][key]:
+            break                                             # a vida subiu: foi trocado ali; o trecho começa depois
+        seg.append(row)
+    seg.reverse()
+    first, last = seg[0], seg[-1]
+    span = (datetime.fromisoformat(last["day"]).date() - datetime.fromisoformat(first["day"]).date()).days
+    if span < 2:
+        return None
+    key = "hours" if first.get("hours") is not None and last.get("hours") is not None else "pct"
+    burn = (first[key] - last[key]) / span                  # unidades por dia
+    if burn <= 0 or last[key] is None:
+        return None
+    days_left = last[key] / burn
+    today = today or datetime.now().date()
+    return {"per_day": round(burn, 2), "unit": "h" if key == "hours" else "%", "days_left": round(days_left),
+            "date": (today + timedelta(days=days_left)).isoformat(), "based_on_days": span}
+
+
+def coverage(store: Store, days: int, cell: int = 250, now: datetime | None = None) -> dict:
+    """Em quantas limpezas o robô passou por cada quadrado de `cell` mm (mapa de calor de cobertura).
+
+    Cada limpeza conta uma vez por quadrado; os saltos entre pontos (<= 1 m) são preenchidos para não deixar falhas."""
+    now = _local(now or datetime.now(timezone.utc))
+    start = int((now - timedelta(days=days)).timestamp())
+    counts: Counter = Counter()
+    paths = store.paths_since(start)
+    for rec in paths:
+        seen = set()
+        prev = None
+        for x, y, *_ in rec["points"]:
+            if prev and math.hypot(x - prev[0], y - prev[1]) <= 1000:
+                steps = max(1, int(math.hypot(x - prev[0], y - prev[1]) // (cell / 2)))
+                for i in range(1, steps + 1):
+                    seen.add((int((prev[0] + (x - prev[0]) * i / steps) // cell), int((prev[1] + (y - prev[1]) * i / steps) // cell)))
+            else:
+                seen.add((int(x // cell), int(y // cell)))
+            prev = (x, y)
+        counts.update(seen)
+    return {"days": days, "cell": cell, "cleanings": len(paths), "max": max(counts.values(), default=0),
+            "cells": [[cx * cell, cy * cell, n] for (cx, cy), n in counts.items()]}
 
 
 def cleanings(store: Store, days: int, now: datetime | None = None) -> dict:

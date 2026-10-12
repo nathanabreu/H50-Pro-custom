@@ -64,6 +64,18 @@ que move o robô. Marque cada item e anote o que fugir do esperado (a mensagem d
 - [ ] Robô carregado na base, caminho livre. `py tools\zone_probe.py` (só simula) e depois `py tools\zone_probe.py --yes`.
 - [ ] Se algum formato funcionar, a sonda manda o robô voltar e diz qual foi. Me passe a saída.
 
+## 10. Novidades para conferir (sem mexer no robô)
+- [ ] **Perfil somente leitura**: Configurações → Perfil somente leitura → definir senha. Numa aba anônima entre com essa senha:
+  só aparecem Início, Dashboards, Histórico, Consumíveis e Configurações (sem Estação/Iniciar/Área); tentar mudar algo não é possível.
+  Entre de volta como administrador e use **Desligar**: a sessão do visualizador cai.
+- [ ] **Acessos ao painel** (Manutenção): aparecem seus logins; erre a senha de propósito e veja o registro "falhou" com o IP.
+- [ ] **Caminho percorrido**: faça uma limpeza curta com o app aberto e a conta Xiaomi conectada. Ao terminar (cerca de 1 min depois)
+  o Histórico mostra **Ver caminho** nessa limpeza. Limpezas antigas não têm caminho.
+- [ ] **Cobertura** (Dashboards): depois de 1 ou mais limpezas com caminho, o mapa mostra onde o robô passou.
+- [ ] **Previsão de troca** (Consumíveis): aparece depois de alguns dias de dados (precisa de 2 dias ou mais de desgaste).
+- [ ] **Métricas**: `set H50_METRICS_TOKEN=um-valor-longo` e abra `curl -H "Authorization: Bearer um-valor-longo" http://127.0.0.1:8050/metrics`.
+- [ ] **Notificação "parado"**: marque o evento em Notificações; pause o robô por 30 min e confira o aviso.
+
 ## O que me mandar quando algo falhar
 O texto exato do erro (tela ou toast), em qual passo, e as últimas linhas de **Manutenção → Log do app**.
 Se for dúvida de segurança ou algo estranho no robô, **Manutenção → Pacote de diagnóstico** (não tem token, DID nem IP completo).

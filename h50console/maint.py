@@ -70,6 +70,23 @@ def mask_ip(ip: str) -> str:
     return re.sub(r"(\d+\.\d+\.\d+\.)\d+", r"\1x", ip or "")
 
 
+_SCRUB = [
+    (re.compile(r"\b[0-9a-fA-F]{32}\b"), "<token>"),                                  # token miIO, hash de 128 bits
+    (re.compile(r"(?i)\b(ssecurity|servicetoken|token|passw(?:or)?d|senha|authorization|secret|cookie)\b(\s*[=:]\s*|\s+)\S+"), r"\1\2<oculto>"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "<e-mail>"),
+    (re.compile(r"\b\d{8,}\b"), "<id>"),                                              # DID, uid da conta, epoch longo
+    (re.compile(r"(?i)\b(https?://[^\s/?#]+)[^\s]*"), r"\1/…"),                       # URLs: só o servidor (a query pode ter credenciais)
+]
+
+
+def scrub(text: str) -> str:
+    """Tira de uma mensagem de log o que não deve sair do computador: IP, token, senha, e-mail, DID/uid, caminhos de URL."""
+    out = mask_ip(str(text))
+    for rx, repl in _SCRUB:
+        out = rx.sub(repl, out)
+    return out
+
+
 def support_bundle(hub, ring: RingLog | None, version: str) -> dict:
     """Informações úteis para um relatório de problema, SEM segredos (token, sessão, DID, IP completo)."""
     robots = []
@@ -84,7 +101,7 @@ def support_bundle(hub, ring: RingLog | None, version: str) -> dict:
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "cloud_state": hub.cloud.state if hub.cloud else "none",
         "robots": robots,
-        "log": [{k: (mask_ip(v) if k == "msg" else v) for k, v in rec.items()} for rec in (ring.tail(200) if ring else [])],
+        "log": [{k: (scrub(v) if k == "msg" else v) for k, v in rec.items()} for rec in (ring.tail(200) if ring else [])],
     }
 
 

@@ -29,12 +29,12 @@ python -m h50console            # http://127.0.0.1:8050
 |---|---|
 | **Início** | Estado, mapa (toque no cômodo para escolher a área), iniciar/pausar, Estação (pó, lavar e secar o mop), Modos, Atalhos, rotinas, agenda |
 | **Robôs** | Conta Xiaomi por QR, **adicionar** (token automático, achar pelo DID, manual), editar, testar, remover; transporte rede local / nuvem / automático |
-| **Dashboards** | Área limpa por dia, por cômodo, mapa de calor dia × hora, status ao longo do tempo, bateria |
-| **Histórico** | Limpezas (o robô só guarda ~20; o app guarda todas), filtros, totais, CSV |
-| **Consumíveis** | Vida útil, alerta abaixo de 10 %, zerar |
-| **Configurações** | Todos os ajustes do robô com os textos do app; **notificações** (ntfy, Telegram, webhook); senha e sessões |
+| **Dashboards** | Área limpa por dia, por cômodo, mapa de calor dia × hora, **cobertura no mapa**, status ao longo do tempo, bateria |
+| **Histórico** | Limpezas (o robô só guarda ~20; o app guarda todas), filtros, totais, CSV, **caminho percorrido** (das limpezas feitas com o app aberto) |
+| **Consumíveis** | Vida útil, alerta abaixo de 10 %, **previsão de troca**, zerar |
+| **Configurações** | Todos os ajustes do robô com os textos do app; **notificações** (ntfy, Telegram, webhook); senha, sessões e **perfil somente leitura** |
 | **Diagnóstico** | Estado bruto, falhas, comandos enviados, cômodos e móveis |
-| **Manutenção** | Espaço e retenção, otimizar bancos, **backup criptografado** e restauração, logs, pacote de diagnóstico |
+| **Manutenção** | Espaço e retenção, otimizar bancos, **acessos ao painel**, **backup criptografado** e restauração, logs, pacote de diagnóstico |
 | **Laboratório** | Propriedades ao vivo, **mudanças com anotações**, varredura de piids, ações por risco, objetos da nuvem |
 
 ## Acesso de fora de casa
@@ -51,6 +51,9 @@ ele usa a rede local e cai para a nuvem sozinho.
 | `H50_DATA_DIR` | `data` | robôs (tokens), bancos, sessão da nuvem, configurações |
 | `H50_PASSWORD` | — | senha fixa (Docker); sem ela, a senha é criada no primeiro acesso |
 | `H50_TRUST_PROXY` / `H50_COOKIE_SECURE` | `false` | atrás de proxy/túnel confiável / atrás de HTTPS |
+| `H50_VIEWER_PASSWORD` | vazio | senha do perfil somente leitura (só consulta; nada de comandos, ajustes, cadastro ou backup). Também pode ser definida em Configurações |
+| `H50_METRICS_TOKEN` | vazio | token do coletor Prometheus em `GET /metrics` (cabeçalho `Authorization: Bearer`). Sem ele, `/metrics` só abre com sessão |
+| `H50_ALLOWED_HOSTS` | vazio | nomes extras aceitos no Host. Em localhost sem proxy qualquer outro nome é recusado (contra DNS rebinding) |
 | `RAW_ENABLED` | `false` | libera escrever propriedades e executar ações no Laboratório |
 | `H50_BACKUP_PASSPHRASE` | — | senha do backup para `python -m h50console backup` em agendadores |
 

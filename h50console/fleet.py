@@ -17,7 +17,7 @@ import unicodedata
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-from . import catalog, history
+from . import catalog, history, paths
 from .device import H50
 from .events import EventBus
 from .gateway import Gateway
@@ -97,6 +97,7 @@ class Robot:
         self.gw = Gateway(H50(self.client), self.store, self.bus)
         self.poller = Poller(self.gw, self.store)
         self.poller.retention_days = lambda: fleet.settings.get("retention_days", 90)
+        self.path_recorder = None
         self.app = None                       # lógica das rotas do robô (web.App), criada pelo hub
         self._stop = threading.Event()
         self._started = False
@@ -139,6 +140,10 @@ class Robot:
         self.poller.start()
         if self.fleet.start_threads:
             history.start_sync(self.bus, self.fleet.cloud, self.store, lambda: self.cfg.did or None, stop=self._stop)
+            self.path_recorder = paths.PathRecorder(
+                self.gw, self.store, paths.make_fetch(self.gw, self.fleet.cloud, lambda: self.cfg.did or None,
+                                                      lambda: self.cfg.model))
+            paths.start(self.bus, self.path_recorder, stop=self._stop)
             threading.Thread(target=self._learn_did, name=f"did-{self.cfg.id}", daemon=True).start()
 
     def _learn_did(self) -> None:

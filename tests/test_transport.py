@@ -143,5 +143,22 @@ class AutoClientTests(unittest.TestCase):
         self.assertIs(build_client("auto", self.lan, None), self.lan)       # sem nuvem, só LAN
 
 
+class SessionFile(unittest.TestCase):
+    def test_session_is_saved_private_and_atomically(self):
+        import json
+        import os
+        import stat
+        import tempfile
+        from pathlib import Path
+        from h50console.cloud import Cloud
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "cloud-session.json"
+            Cloud({"user_id": "1", "ssecurity": "x"}).save(f)
+            self.assertEqual(json.loads(f.read_text(encoding="utf-8"))["user_id"], "1")
+            self.assertFalse((Path(d) / "cloud-session.json.tmp").exists())
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(f.stat().st_mode), 0o600)
+
+
 if __name__ == "__main__":
     unittest.main()

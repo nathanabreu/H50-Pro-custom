@@ -16,6 +16,19 @@
     const p = path.split("?")[0];
     return ACCOUNT.test(p) || !robotId ? path : path.replace(/^\/api\//, `/api/r/${robotId}/`);
   };
+  async function showPath(r) {
+    const box = el("div", { textContent: "Carregando…" });
+    openSheet(`Caminho de ${fmtDate(r.start)}`, [box]);
+    try {
+      const d = await api("GET", `/api/history/path?stime=${r.stime}`);
+      if (!d.map) throw new Error("mapa ainda não baixado: abra o Início uma vez");
+      box.textContent = "";
+      await MapView.render(box, { ...d.map, _grid: undefined, path: d.points, robot: null }, {});
+      box.append(el("p", { className: "muted small", textContent:
+        `${d.points.length} pontos${d.final ? "" : " (parcial: a limpeza pode não ter terminado de gravar)"}.` }));
+    } catch (e) { box.textContent = e.message; }
+  }
+
   async function api(method, path, body) {
     const r = await fetch(url(path), {
       method, headers: { "X-H50": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
@@ -437,6 +450,17 @@
         label: short(d.day), value: d.area_m2, tip: `${short(d.day)} · ${d.count} limpeza(s), ${n1(d.duration_min, 0)} min`,
       })), { format: (v) => n1(v), unit: " m²", labelEvery: Math.ceil(c.by_day.length / 10) });
       Charts.bars($("#d-rooms"), c.by_room.map((r) => ({ label: r.label, value: r.count })), { format: (v) => n1(v, 0) });
+      api("GET", `/api/dash/coverage?days=${range.days}`).then(async (cv) => {
+        const box = $("#d-coverage");
+        if (!cv.cleanings || !cv.map) {
+          box.textContent = "";
+          $("#d-cov-note").textContent = cv.cleanings ? "Falta o mapa: abra o Início uma vez com a nuvem conectada."
+            : "Ainda sem caminhos gravados neste período. O app grava o caminho de cada limpeza feita com ele aberto e a nuvem conectada.";
+          return;
+        }
+        await MapView.render(box, { ...cv.map, _grid: undefined, path: [], robot: null }, { heat: cv, dim: true });
+        $("#d-cov-note").textContent = `${cv.cleanings} limpeza(s). Quanto mais escuro, mais limpezas passaram pelo trecho (máximo ${cv.max}).`;
+      }).catch(() => {});
       Charts.bars($("#d-types"), c.by_type.map((r) => ({ label: r.label, value: r.count })), { format: (v) => n1(v, 0) });
       Charts.heat($("#d-heat"), c.heat.matrix, c.heat.weekdays);
 
@@ -469,6 +493,9 @@
         { key: "duration_s", label: "Duração", num: true, render: (r) => fmtDur(r.duration_s) },
         { key: "area_m2", label: "Área (m²)", num: true, render: (r) => r.area_m2?.toLocaleString("pt-BR") },
         { key: "source", label: "Fonte", render: (r) => r.source === "robot" ? "robô (nuvem)" : "app" },
+        { key: "has_path", label: "Caminho", filter: false, sortValue: (r) => r.has_path ? 1 : 0,
+          render: (r) => { if (!r.has_path) return el("span", { className: "muted", textContent: "—" });
+            const b = el("button", { textContent: "Ver caminho" }); b.onclick = () => showPath(r); return b; } },
       ], data.records, {
         sort: "start", desc: true,
         footer: (rows) => ({
@@ -485,6 +512,8 @@
         { key: "name", label: "Item" },
         { key: "pct", label: "Vida útil", num: true, render: (r) => r.pct == null ? "—" : `${r.pct} %` },
         { key: "hours", label: "Horas restantes", num: true },
+        { key: "forecast", label: "Previsão de troca", sortValue: (r) => r.forecast ? r.forecast.days_left : 1e9,
+          render: (r) => r.forecast ? `em ~${r.forecast.days_left} dia(s) (${new Date(r.forecast.date + "T12:00").toLocaleDateString("pt-BR")})` : "—" },
         { key: "reset", label: "", filter: false, sort: false, render: (r) => {
           const b = el("button", { textContent: "Zerar" });
           b.onclick = () => confirmAction(`Marcar ${r.name} como trocado (volta a 100 %)?`,
@@ -558,7 +587,11 @@
   async function show() {
     const tab = views[current()] ? current() : "inicio";
     for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== tab;
-    for (const a of document.querySelectorAll("#tabs a")) a.classList.toggle("on", a.getAttribute("href") === `#${tab}`);
+    for (const a of document.querySelectorAll("#tabs a")) {
+      const on = a.getAttribute("href") === `#${tab}`;
+      a.classList.toggle("on", on);
+      if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    }
     try { await views[tab](); } catch (e) { toast(e.message, true); }
   }
   let pending;
@@ -685,6 +718,22 @@
     // segurança: senha e sessões
     const auth = await fetch("/api/auth/status").then((r) => r.json()).catch(() => ({ enabled: false }));
     $("#sec-card").hidden = !auth.enabled;
+    document.body.classList.toggle("viewer", auth.role === "viewer");
+    if (auth.role === "viewer") $("#sec-note").textContent = "Você entrou com o perfil somente leitura.";
+    const viewerCard = $("#viewer-card");
+    viewerCard.hidden = !(auth.enabled && auth.role === "admin");
+    const viewerShow = (on) => { $("#viewer-state").textContent = on ? "Ligado" : "Desligado"; $("#viewer-off").hidden = !on; };
+    viewerShow(auth.viewer_enabled);
+    $("#viewer-set").onclick = () => {
+      const pw = el("input", { type: "password", placeholder: "Senha do visualizador (mínimo 8)", autocomplete: "new-password" });
+      openSheet("Senha do visualizador", [el("form", { className: "form-grid", onsubmit: (e) => e.preventDefault() }, pw,
+        el("p", { className: "muted small", textContent: "Trocar a senha desconecta quem já entrou com o perfil. Use uma senha diferente da sua." }))], {
+        confirmLabel: "Salvar",
+        confirm: async () => { await api("POST", "/api/auth/viewer", { password: pw.value }); viewerShow(true); toast("Perfil somente leitura ligado"); },
+      });
+    };
+    $("#viewer-off").onclick = () => confirmAction("Desligar o perfil somente leitura? Quem estiver conectado com ele sai.",
+      () => run("Desligar", async () => { await api("POST", "/api/auth/viewer", { password: "" }); viewerShow(false); }));
     $("#sec-pw").onclick = () => {
       const cur = el("input", { type: "password", placeholder: "Senha atual", autocomplete: "current-password" });
       const nw = el("input", { type: "password", placeholder: "Nova senha (mínimo 8 caracteres)", autocomplete: "new-password" });

@@ -68,6 +68,36 @@ class AuthUnit(unittest.TestCase):
         self.clock.t += 31
         self.assertTrue(a.valid_token(a.login(PW, "9.9.9.9")))        # passou a espera
 
+    def test_activity_log_records_logins_and_failures(self):
+        a = self.auth
+        a.setup(a.setup_code, PW, "1.1.1.1")
+        with self.assertRaises(AuthError):
+            a.login("errada", "2.2.2.2")
+        a.login(PW, "1.1.1.1")
+        evs = [(e["event"], e["ip"], e["ok"]) for e in a.activity]       # mais recente primeiro
+        self.assertEqual(evs[0], ("login", "1.1.1.1", True))
+        self.assertEqual(evs[1], ("senha ou código incorreto", "2.2.2.2", False))
+        self.assertEqual(evs[2][0], "senha criada")
+
+    def test_tracked_ips_are_capped(self):
+        from h50console import auth as auth_mod
+        a = self.auth
+        a.setup(a.setup_code, PW)
+        for i in range(auth_mod.MAX_TRACKED_IPS + 50):
+            with self.assertRaises(AuthError):
+                a.login("errada", f"10.{i // 256}.{i % 256}.1")
+        self.assertLessEqual(len(a._fails), auth_mod.MAX_TRACKED_IPS)
+
+    def test_change_password_is_rate_limited(self):
+        a = self.auth
+        a.setup(a.setup_code, PW)
+        for _ in range(MAX_FAILS):
+            with self.assertRaises(AuthError):
+                a.change_password("errada", "outra-senha-123", "3.3.3.3")
+        with self.assertRaises(AuthError) as cm:
+            a.change_password(PW, "outra-senha-123", "3.3.3.3")
+        self.assertEqual(cm.exception.status, 429)
+
     def test_tokens_expire_tamper_and_revoke(self):
         a = self.auth
         token = a.setup(a.setup_code, PW)
@@ -126,6 +156,31 @@ class AuthUnit(unittest.TestCase):
         with self.assertRaises(AuthError) as cm:
             a.change_password("da-env-12345", "nova-senha-1")
         self.assertEqual(cm.exception.status, 409)
+
+    def test_viewer_role_is_separate_and_revocable(self):
+        a = self.auth
+        a.setup(a.setup_code, PW)
+        a.set_viewer_password("somente-leitura-1")
+        v = a.login("somente-leitura-1")
+        self.assertEqual((a.role_of(v), a.role_of(a.login(PW))), ("viewer", "admin"))
+        with self.assertRaises(AuthError):
+            a.set_viewer_password(PW)                                 # não pode repetir a do administrador
+        forged = v.replace("v2.", "v1.").replace(".viewer", "")      # tentar passar o token do visualizador por admin
+        self.assertIsNone(a.role_of(forged))
+        a.set_viewer_password("outra-senha-leitura")                 # trocar a senha derruba as sessões do visualizador
+        self.assertIsNone(a.role_of(v))
+        admin = a.login(PW)
+        a.set_viewer_password("")                                     # desligar o perfil
+        self.assertIsNone(a.role_of(a.make_token("viewer")))
+        self.assertEqual(a.role_of(admin), "admin")
+        with self.assertRaises(AuthError):
+            a.login("outra-senha-leitura")
+
+    def test_viewer_env_password(self):
+        a = Auth(self.tmp.name, env_password="admin-env-1234", viewer_password="viewer-env-1234", iters=FAST, clock=self.clock)
+        self.assertEqual(a.role_of(a.login("viewer-env-1234")), "viewer")
+        with self.assertRaises(AuthError):
+            a.set_viewer_password("x" * 10)
 
     def test_min_password_constant(self):
         self.assertGreaterEqual(MIN_PASSWORD, 8)
@@ -216,6 +271,48 @@ class AuthHttp(unittest.TestCase):
         self.assertEqual((st["authenticated"], st["setup_required"]), (True, False))
         _, _, r = s.req("GET", "/login.html")
         self.assertNotIn("Set-Cookie", dict(r.getheaders()))
+
+    def test_activity_endpoint_needs_login(self):
+        s = Server(self)
+        self.assertEqual(s.req("GET", "/api/auth/activity")[0], 401)
+        cookie = s.login_cookie()
+        st, d, _ = s.req("GET", "/api/auth/activity", cookie=cookie)
+        self.assertEqual(st, 200)
+        self.assertEqual(d["events"][0]["event"], "senha criada")
+
+    def test_viewer_can_read_but_not_change(self):
+        s = Server(self)
+        admin = s.login_cookie()
+        st, _, _ = s.req("POST", "/api/auth/viewer", {"password": "somente-leitura-1"}, cookie=admin, headers={"X-H50": "1"})
+        self.assertEqual(st, 200)
+        _, _, r = s.req("POST", "/api/auth/login", {"password": "somente-leitura-1"}, headers={"X-H50": "1"})
+        viewer = r.getheader("Set-Cookie").split(";")[0]
+        _, status, _ = s.req("GET", "/api/auth/status", cookie=viewer)
+        self.assertEqual((status["role"], status["authenticated"]), ("viewer", True))
+        self.assertEqual(s.req("GET", "/api/robots", cookie=viewer)[0], 200)
+        self.assertEqual(s.req("GET", "/", cookie=viewer)[0], 200)
+        for method, path in (("POST", "/api/robots"), ("PUT", "/api/r/x/settings/2-9"), ("POST", "/api/backup/create"),
+                             ("GET", "/api/maintenance/status"), ("GET", "/api/backup/x"), ("GET", "/api/auth/activity"),
+                             ("GET", "/api/r/x/lab/props"), ("GET", "/api/notify"), ("GET", "/api/cloud/devices")):
+            self.assertEqual(s.req(method, path, {} if method != "GET" else None, cookie=viewer, headers={"X-H50": "1"})[0], 403,
+                             f"{method} {path}")
+        for path in ("/api/auth/password", "/api/auth/revoke", "/api/auth/viewer"):
+            self.assertEqual(s.req("POST", path, {"password": "x" * 9, "current": "a", "new": "b" * 9},
+                                   cookie=viewer, headers={"X-H50": "1"})[0], 403, path)
+        self.assertEqual(s.req("GET", "/api/maintenance/status", cookie=admin)[0], 200)   # o administrador segue igual
+        # mapa e status da nuvem: permitidos (o módulo de nuvem está desligado nos testes, então 404/503, nunca 403)
+        self.assertNotEqual(s.req("POST", "/api/r/x/cloud/map", {}, cookie=viewer, headers={"X-H50": "1"})[0], 403)
+        self.assertNotEqual(s.req("GET", "/api/cloud/status", cookie=viewer)[0], 403)         # rota da conta (o app usa esta)
+        self.assertEqual(s.req("POST", "/api/r/x/cloud/qr", {}, cookie=viewer, headers={"X-H50": "1"})[0], 403)
+
+    def test_metrics_needs_session_or_token(self):
+        s = Server(self)
+        self.assertEqual(s.req("GET", "/metrics")[0], 401)
+        cookie = s.login_cookie()
+        self.assertEqual(s.req("GET", "/metrics", cookie=cookie)[0], 200)
+        s2 = Server(self)
+        s2.srv.RequestHandlerClass  # servidor sem token configurado: Bearer qualquer não vale
+        self.assertEqual(s2.req("GET", "/metrics", headers={"Authorization": "Bearer abc"})[0], 401)
 
     def test_cookie_flags(self):
         s = Server(self)

@@ -6,11 +6,13 @@ A UI lê o cache e o banco; só os comandos chegam ao robô, sempre pelo Gateway
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import mimetypes
 import queue
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -39,6 +41,16 @@ class Raw:
 
 
 MAX_UPLOAD = 100 * 1024 * 1024
+MAX_STREAMS = 32                  # conexões SSE simultâneas (cada uma ocupa uma thread)
+MAX_JSON = 1024 * 1024            # nenhum corpo JSON legítimo do app passa disso
+# o que o perfil somente leitura pode consultar (tudo o mais, inclusive qualquer POST/PUT/DELETE, é recusado)
+VIEWER_GET = re.compile(
+    r"/api/(app|robots|stream|cloud/status)"
+    r"|/api/r/[\w-]+/(stream|health|state|rooms|custom|furniture|settings|consumables|history|history/path|schedules"
+    r"|export/cleanings\.csv|dash/(cleanings|timeline|coverage)|faults|map|app|cloud/status)")
+# único POST do visualizador: atualizar o mapa a partir da nuvem (só baixa; não mexe no robô)
+VIEWER_POST = re.compile(r"/api/r/[\w-]+/cloud/map")
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
 
 class ApiError(Exception):
@@ -83,6 +95,7 @@ class App:
             ("GET", r"/api/consumables", self.consumables),
             ("POST", r"/api/consumables/(\w+)/reset", self.reset_consumable),
             ("GET", r"/api/history", self.history),
+            ("GET", r"/api/history/path", self.history_path),
             ("GET", r"/api/schedules", self.schedules),
             ("GET", r"/api/commands", self.commands),
             ("GET", r"/api/export/cleanings\.csv", self.export_cleanings),
@@ -96,6 +109,7 @@ class App:
             ("GET", r"/api/lab/cloud-map", self.lab_cloud_map),
             ("GET", r"/api/dash/cleanings", self.dash_cleanings),
             ("GET", r"/api/dash/timeline", self.dash_timeline),
+            ("GET", r"/api/dash/coverage", self.dash_coverage),
             ("GET", r"/api/faults", self.faults),
             ("GET", r"/api/app", self.app_info),
             ("PUT", r"/api/app/name", self.put_name),
@@ -219,7 +233,8 @@ class App:
         for item, (p, h) in catalog.CONSUMABLE_PROPS.items():
             pct = snap.get(p)
             out.append({"item": item, "name": CONSUMABLE_NAMES[item], "pct": pct, "hours": snap.get(h),
-                        "alert": pct is not None and pct < 10})
+                        "alert": pct is not None and pct < 10,
+                        "forecast": dash.consumable_forecast(self.store.consumable_history(item))})
         return out
 
     def history(self, query, **_):
@@ -232,7 +247,9 @@ class App:
         stype = query.get("type", [None])[0]
         rows = self.store.cleanings(epoch("from"), epoch("to"), int(stype) if stype else None)
         names = {r["id"]: r["name"] for r in self.store.rooms()}
+        with_path = self.store.path_stimes()
         for r in rows:
+            r["has_path"] = r["stime"] in with_path
             r["start"] = _local(r["stime"])
             r["type_label"] = catalog.label("2/5", r["sweep_type"]) if r["sweep_type"] else None
             r["room_names"] = [names.get(i, str(i)) for i in r["rooms"]]
@@ -245,6 +262,17 @@ class App:
                   "area_m2": round(sum(r["area_m2"] or 0 for r in rows), 2)}
         return {"records": rows, "totals": totals}
 
+    def history_path(self, query, **_):
+        """Caminho percorrido numa limpeza (pontos [x, y, tipo] em mm) + o mapa salvo, para desenhar."""
+        try:
+            stime = int(query.get("stime", [""])[0])
+        except ValueError:
+            raise ApiError(400, "informe stime (início da limpeza, em epoch)") from None
+        rec = self.store.get_path(stime)
+        if not rec or len(rec["points"]) < 2:
+            raise ApiError(404, "esta limpeza não tem caminho gravado (só limpezas feitas com o app aberto e a nuvem conectada)")
+        return {**rec, "map": self.cloud.latest_map(self._map_dir()) if self.cloud else None}
+
     def schedules(self, **_):
         routines = {c["id"]: c["name"] for c in decoders.custom_cleans(self.gw.cache.get("2/42"))}
         out = []
@@ -256,6 +284,10 @@ class App:
     def dash_cleanings(self, query, **_):
         days = max(1, min(366, int(query.get("days", [30])[0])))
         return dash.cleanings(self.store, days)
+
+    def dash_coverage(self, query, **_):
+        days = max(1, min(366, int(query.get("days", [30])[0])))
+        return {**dash.coverage(self.store, days), "map": self.cloud.latest_map(self._map_dir()) if self.cloud else None}
 
     def dash_timeline(self, query, **_):
         hours = max(1, min(24 * 31, int(query.get("hours", [24])[0])))
@@ -545,7 +577,10 @@ CSP = ("default-src 'self'; img-src 'self' data: https://*.xiaomi.com; style-src
        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
 
-def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool = False):
+def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool = False, local_only: bool = False,
+                 extra_hosts=(), metrics_token: str = ""):
+    streams = {"n": 0}
+    streams_lock = threading.Lock()
     class Handler(BaseHTTPRequestHandler):
         server_version = "H50Console/1.0"
 
@@ -563,8 +598,22 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
         def _secure_cookie(self) -> bool:
             return cookie_secure or (trust_proxy and self.headers.get("X-Forwarded-Proto") == "https")
 
+        def _drain(self) -> None:
+            """Recusas antecipadas (403, 413...) respondem sem ler o corpo; fechar a conexão com dados pendentes pode
+            gerar um RST que apaga a resposta no cliente. Então descarta o que sobrou (até 1 MB) antes de responder."""
+            if getattr(self, "_body_done", False):
+                return
+            self._body_done = True
+            length = self._length()
+            if 0 < length <= MAX_JSON:
+                try:
+                    self.rfile.read(length)
+                except OSError:
+                    pass
+
         def _send(self, status: int, payload=None, ctype="application/json; charset=utf-8", raw: bytes | None = None,
                   cookies=(), headers=None):
+            self._drain()
             data = raw if raw is not None else json.dumps(payload, ensure_ascii=False, default=str).encode()
             self.send_response(status)
             self.send_header("Content-Type", ctype)
@@ -574,6 +623,11 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Content-Security-Policy", CSP)
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            if self._secure_cookie():
+                self.send_header("Strict-Transport-Security", "max-age=31536000")
             for c in cookies:
                 self.send_header("Set-Cookie", c)
             for k, v in (headers or {}).items():
@@ -588,20 +642,42 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
 
+        def _length(self) -> int:
+            """Content-Length como inteiro >= 0; -1 se for inválido."""
+            raw = (self.headers.get("Content-Length") or "0").strip()
+            return int(raw) if raw.isdigit() else -1
+
+        def _host_ok(self) -> bool:
+            """Servidor só em localhost e sem proxy: recusa Host de outro nome (DNS rebinding: um site que
+            aponta o próprio domínio para 127.0.0.1 e tenta falar com o painel pelo navegador da vítima)."""
+            if not local_only:
+                return True
+            host = (self.headers.get("Host") or "").strip().lower()
+            name = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+            return name in LOCAL_HOSTS or host in extra_hosts or name in extra_hosts
+
         def _read_json(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            length = self._length()
+            if length < 0:
+                return None, "Content-Length inválido"
             if not length:
                 return None, None
+            if length > MAX_JSON:
+                return None, "corpo grande demais"
+            self._body_done = True
             try:
                 return json.loads(self.rfile.read(length)), None
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 return None, "JSON inválido"
 
         # -- autenticação ----------------------------------------------------------------------------
-        def _authed(self) -> bool:
+        def _role(self) -> str | None:
             if auth is None or not auth.enabled:
-                return True
-            return auth.valid_token(auth.token_from_cookie_header(self.headers.get("Cookie")))
+                return "admin"
+            return auth.role_of(auth.token_from_cookie_header(self.headers.get("Cookie")))
+
+        def _authed(self) -> bool:
+            return self._role() is not None
 
         def _csrf_ok(self) -> bool:
             """POST/PUT/DELETE exigem o cabeçalho X-H50 (um formulário de outro site não consegue enviá-lo)
@@ -621,7 +697,11 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
             ip, secure = self._ip(), self._secure_cookie()
             try:
                 if path == "/api/auth/status" and method == "GET":
-                    return self._send(200, auth.status(self._authed()))
+                    return self._send(200, auth.status(self._authed(), self._role()))
+                if path == "/api/auth/activity" and method == "GET":
+                    if self._role() != "admin":
+                        return self._send(401 if not self._authed() else 403, {"error": "só o administrador", "login": not self._authed()})
+                    return self._send(200, {"events": list(auth.activity)})
                 if method != "POST":
                     return self._send(405, {"error": "método não permitido"})
                 if not self._csrf_ok():
@@ -632,11 +712,16 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
                     token = auth.setup(str(body.get("code", "")), str(body.get("password", "")), ip)
                 elif path == "/api/auth/logout":
                     return self._send(200, {"ok": True}, cookies=[auth.cookie("", secure, clear=True)])
-                elif path in ("/api/auth/password", "/api/auth/revoke"):
+                elif path in ("/api/auth/password", "/api/auth/revoke", "/api/auth/viewer"):
                     if not self._authed():
                         return self._send(401, {"error": "login necessário", "login": True})
-                    token = (auth.change_password(str(body.get("current", "")), str(body.get("new", "")))
-                             if path.endswith("password") else auth.revoke_all())
+                    if self._role() != "admin":
+                        return self._send(403, {"error": "só o administrador"})
+                    if path == "/api/auth/viewer":
+                        auth.set_viewer_password(str(body.get("password", "")))
+                        return self._send(200, {"ok": True, "viewer_enabled": auth.viewer_enabled})
+                    token = (auth.change_password(str(body.get("current", "")), str(body.get("new", "")), ip)
+                             if path.endswith("password") else auth.revoke_all(ip))
                 else:
                     return self._send(404, {"error": "rota não encontrada"})
                 return self._send(200, {"ok": True}, cookies=[auth.cookie(token, secure)])
@@ -646,8 +731,20 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
 
         # -- roteamento ---------------------------------------------------------------------------------
         def _handle(self, method: str):
+            if not self._host_ok():
+                return self._send(421, {"error": "nome de host não permitido (use localhost ou defina H50_ALLOWED_HOSTS)"})
             url = urlparse(self.path)
             path = url.path
+            if path == "/metrics" and method == "GET":        # coletor Prometheus: token fixo (H50_METRICS_TOKEN) ou sessão
+                got = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
+                if (metrics_token and hmac.compare_digest(got.encode(), metrics_token.encode())) or self._authed():
+                    try:
+                        text = hub.metrics_text()
+                    except Exception:  # noqa: BLE001
+                        log.exception("erro ao montar /metrics")
+                        return self._send(500, {"error": "erro interno"})
+                    return self._send(200, ctype="text/plain; version=0.0.4; charset=utf-8", raw=text.encode())
+                return self._send(401, {"error": "login necessário"}, headers={"WWW-Authenticate": "Bearer"})
             if path.startswith("/api/auth/"):
                 if auth is None or not auth.enabled:     # sem senha (só localhost): o status responde que está liberado
                     return self._send(200, {"enabled": False, "configured": False, "setup_required": False,
@@ -660,6 +757,9 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
                     return self._redirect("/login.html?next=" + quote(self.path, safe=""))
                 if method != "GET" and not self._csrf_ok():
                     return self._send(403, {"error": "requisição bloqueada (CSRF)"})
+                if self._role() == "viewer" and not ((method == "GET" and (VIEWER_GET.fullmatch(path) or not path.startswith("/api/")))
+                                                     or (method == "POST" and VIEWER_POST.fullmatch(path))):
+                    return self._send(403, {"error": "perfil somente leitura"})
             if method == "GET" and path == "/api/stream":
                 return self._stream(hub.bus)                       # eventos da conta
             m = STREAM_PATH.fullmatch(path)
@@ -671,9 +771,12 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
             if method == "GET" and not path.startswith("/api/"):
                 return self._static(path)
             if method == "POST" and path == "/api/backup/restore":        # upload bruto do arquivo de backup
-                length = int(self.headers.get("Content-Length") or 0)
+                length = self._length()
+                if length < 0:
+                    return self._send(400, {"error": "Content-Length inválido"})
                 if length > MAX_UPLOAD:
                     return self._send(413, {"error": "arquivo grande demais"})
+                self._body_done = True
                 body, err = {"data": self.rfile.read(length), "passphrase": self.headers.get("X-H50-Passphrase", "")}, None
             else:
                 body, err = self._read_json()
@@ -681,6 +784,11 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
                 return self._send(400, {"error": err})
             try:
                 result = hub.dispatch(method, path, parse_qs(url.query), body)
+                if path.endswith("/cloud/status") and self._role() == "viewer":   # sem QR, conta nem país
+                    result = {"state": result.get("state")}
+                if path == "/api/robots" and self._role() == "viewer":      # o visualizador não precisa de IP, DID nem pastas
+                    keep = ("id", "name", "model", "online", "via", "status", "status_label", "battery", "active", "supported")
+                    result = [{k: r[k] for k in keep if k in r} for r in result]
                 if isinstance(result, Raw):
                     disp = {"Content-Disposition": f'attachment; filename="{result.filename}"'} if result.filename else None
                     return self._send(200, ctype=result.ctype, raw=result.data, headers=disp)
@@ -722,6 +830,10 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
             self._send(200, ctype=ctype, raw=f.read_bytes())
 
         def _stream(self, bus):
+            with streams_lock:
+                if streams["n"] >= MAX_STREAMS:
+                    return self._send(429, {"error": "conexões de eventos demais abertas; feche outras abas"})
+                streams["n"] += 1
             q = bus.subscribe()
             try:
                 self.send_response(200)
@@ -743,12 +855,17 @@ def make_handler(hub, auth=None, trust_proxy: bool = False, cookie_secure: bool 
                 pass
             finally:
                 bus.unsubscribe(q)
+                with streams_lock:
+                    streams["n"] -= 1
 
     return Handler
 
 
 def make_server(hub, host: str = "127.0.0.1", port: int = 8050, auth=None, trust_proxy: bool = False,
-                cookie_secure: bool = False) -> ThreadingHTTPServer:
-    srv = ThreadingHTTPServer((host, port), make_handler(hub, auth, trust_proxy, cookie_secure))
+                cookie_secure: bool = False, extra_hosts=(), metrics_token: str = "") -> ThreadingHTTPServer:
+    from .auth import is_loopback
+    local_only = is_loopback(host) and not trust_proxy
+    srv = ThreadingHTTPServer((host, port), make_handler(hub, auth, trust_proxy, cookie_secure, local_only,
+                                                         {h.lower() for h in extra_hosts}, metrics_token))
     srv.daemon_threads = True
     return srv

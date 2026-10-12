@@ -4,16 +4,24 @@ Prioridade de cima para baixo dentro de cada bloco. `[ ]` pendente · `[~]` em a
 
 ## Pedidos do usuário (fila)
 
-- [ ] **Histórico: ver o caminho que o robô percorreu em cada limpeza.**
-  - O que já se sabe: o arquivo do mapa (nuvem) traz `paths.points` com a trajetória (`[{x, y, type}]`, tipo 1 = limpando,
-    0 = deslocamento), mas **só da limpeza atual ou da última**. O objeto de trajetória (`10/2`) devolveu 404 fora de uma limpeza.
-  - Consequência: limpezas **passadas não têm caminho recuperável**; só vale daqui para a frente.
-  - Desenho: ao detectar o fim de uma limpeza (evento `cleaning`), baixar o mapa e gravar o `paths.points` em uma tabela
-    `cleaning_path (stime, points, map_ref)` (compactado com zlib; ~1 KB por limpeza); durante a limpeza, guardar também
-    o caminho parcial a cada nova versão do mapa (o `10/1` muda a cada ~1 min), para não perder se o app cair.
-  - Tela: no Histórico, linha expansível ou botão "Ver caminho" que desenha o mapa (o do momento) com a trajetória
-    daquela limpeza; sobrepor várias limpezas num mapa de calor de cobertura por cômodo.
-  - Entra no backup e no CSV/JSON de exportação.
+- [x] **Histórico: ver o caminho que o robô percorreu em cada limpeza.** Feito em `h50console/paths.py`: durante a limpeza
+  baixa o mapa (no máximo a cada 45 s) e guarda os pontos; ao fim (60 s depois) grava o caminho final sob o início oficial (2/17).
+  Tabela `cleaning_path` (migração v3), `GET /api/history/path?stime=`, botão "Ver caminho" no Histórico. Só vale para
+  limpezas **futuras**, feitas com o app aberto e a conta da nuvem conectada (o robô não guarda caminhos antigos).
+  - [x] Mapa de calor de cobertura juntando várias limpezas (Dashboards → Cobertura).
+
+- [ ] **Servidor MCP: conectar e gerenciar o robô a partir de um assistente de IA (Claude etc.).**
+  - Ideia: expor o H50 Console como servidor MCP (Model Context Protocol), para o usuário pedir em linguagem natural
+    "como está o robô?", "limpe a cozinha", "o que mudou nos ajustes?", "quando troco a escova?".
+  - Desenho provável: processo `py -m h50console mcp` (stdio) que fala com a API HTTP do app já em execução (mesma senha/cookie ou
+    um token de API próprio), sem tocar direto no robô nem na nuvem: assim reaproveita fila de prioridade, bloqueios de segurança
+    (`start_block_reason`), registro de comandos e o perfil somente leitura.
+  - Ferramentas (mínimo, só biblioteca padrão com JSON-RPC sobre stdio): `robots_list`, `robot_state`, `consumables`,
+    `history`/`history_path`, `settings_get`; e, só com perfil de administrador, `clean_rooms`, `clean_custom`, `action`
+    (parar/voltar à base/pausar), `setting_set`. Ações que movem o robô pedem confirmação explícita no próprio pedido.
+  - Segurança: token de API separado (revogável, escopo leitura ou administração), nunca expor token do robô nem sessão da nuvem;
+    registrar no log de acessos; limitar a localhost por padrão; transporte HTTP (SSE) opcional para uso remoto atrás do túnel.
+  - Também vale um `GET /api/openapi.json` simples para outras integrações.
 
 ## Em andamento
 
@@ -39,10 +47,11 @@ Prioridade de cima para baixo dentro de cada bloco. `[ ]` pendente · `[~]` em a
 
 ## Ideias
 
-- [ ] Perfil só leitura (visualizador) além do administrador
-- [ ] Métricas Prometheus (`/metrics`) e integração MQTT / Home Assistant
+- [x] Perfil só leitura (visualizador) além do administrador
+- [x] Métricas Prometheus (`/metrics`)
+- [ ] Integração MQTT / Home Assistant
 - [ ] Web Push no celular (opcional, exige a biblioteca `cryptography`; alternativa sem dependência: ntfy)
-- [ ] Fixtures **sintéticas** para o CI público (sem planta da casa nem identificadores)
+- [x] Fixtures **sintéticas** para o CI público (sem planta da casa nem identificadores)
 - [ ] Imagem Docker publicada (GHCR) e `pip install h50console`
 - [x] Licença: MIT
 - [ ] Publicação a partir de histórico limpo (ver `docs/ARQUITETURA.md` §6) e fixtures sintéticas

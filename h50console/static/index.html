@@ -23,7 +23,8 @@
 
 <div id="banner" class="banner" hidden></div>
 
-<nav class="tabs" id="tabs">
+<a class="skip" href="#main">Pular para o conteúdo</a>
+<nav class="tabs" id="tabs" aria-label="Seções">
   <a href="#inicio">Início</a>
   <a href="#robos">Robôs</a>
   <a href="#dashboards">Dashboards</a>
@@ -35,7 +36,7 @@
   <a href="#laboratorio">Laboratório</a>
 </nav>
 
-<main>
+<main id="main" tabindex="-1">
   <!-- Início: espelha a tela principal do app Xiaomi Home -->
   <section id="inicio">
     <div id="onboarding" class="card" hidden></div>
@@ -106,6 +107,9 @@
         <figure class="viz-card"><figcaption>Tipo de limpeza</figcaption><div id="d-types"></div></figure>
         <figure class="viz-card"><figcaption>Quando o robô limpa (início, dia × hora)</figcaption><div id="d-heat"></div></figure>
       </div>
+      <h2>Cobertura</h2>
+      <figure class="viz-card"><figcaption>Onde o robô passou (quantas limpezas por trecho)</figcaption><div id="d-coverage" data-maxh="0.6"></div>
+        <p class="muted small" id="d-cov-note"></p></figure>
       <h2>Bateria e status</h2>
       <div class="viz-tiles" id="d-tiles2"></div>
       <figure class="viz-card"><figcaption>Status ao longo do tempo</figcaption><div id="d-band"></div></figure>
@@ -142,6 +146,13 @@
       </div>
       <p class="muted small" id="sec-note"></p>
     </div>
+    <div class="card" id="viewer-card" hidden>
+      <div class="card-label">Perfil somente leitura</div>
+      <p class="muted small">Uma segunda senha que só permite <strong>ver</strong> (estado, mapa, histórico, dashboards). Não envia comandos,
+        não altera ajustes e não vê tokens, backup, manutenção nem o Laboratório. Útil para a família ou para uma tela na sala.</p>
+      <div class="bar"><span id="viewer-state" class="muted"></span>
+        <button id="viewer-set">Definir senha</button><button id="viewer-off">Desligar</button></div>
+    </div>
     <div class="card" id="notify-card" hidden></div>
     <div id="t-settings"></div>
   </section>
@@ -167,6 +178,11 @@
       </div>
       <p class="muted small">O histórico de limpezas, os consumíveis e as falhas nunca são apagados automaticamente.</p>
     </div>
+
+    <h2>Acessos ao painel</h2>
+    <div id="mt-access"></div>
+    <p class="muted small">Logins, falhas de senha e trocas de senha desde que o app foi iniciado (ficam só na memória).
+      Um IP desconhecido ou muitas falhas seguidas é sinal para trocar a senha e usar "Sair de todos os aparelhos".</p>
 
     <h2>Backup</h2>
     <div class="card">
@@ -231,7 +247,7 @@
   <div class="sheet-foot" id="sheet-foot"></div>
 </dialog>
 
-<div id="toast" class="toast" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script src="table.js"></script>
 <script src="charts.js"></script>
 <script src="map.js"></script>

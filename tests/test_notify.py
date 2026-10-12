@@ -115,6 +115,31 @@ class Events(Base):
         self.n.on_event(self.robot, "online", {})
         self.assertEqual([s[3] for s in self.sent], ["offline", "online"])
 
+    def test_stuck_robot_notice(self):
+        self.store.replace([{**NTFY, "id": self.store.channels[0]["id"], "events": ["stuck"]}])
+        cache = self.robot.gw.cache
+        cache.update({"2/2": 5})                                                        # pausado
+        self.n.tick(self.robot)                                                         # começa a contar
+        self.clock.t += 20 * 60
+        self.n.tick(self.robot)
+        self.assertEqual(self.sent, [])                                                 # 20 min: ainda cedo
+        self.clock.t += 11 * 60
+        self.n.tick(self.robot)
+        self.n.tick(self.robot)                                                         # não repete
+        self.assertEqual([s[3] for s in self.sent], ["stuck"])
+        self.assertIn("Pausado há 31 min", self.sent[0][2])
+        cache.update({"2/2": 2})                                                        # voltou à base: zera a contagem
+        self.n.tick(self.robot)
+        self.clock.t += 7 * 3600
+        self.n.tick(self.robot)
+        self.assertEqual(len(self.sent), 1)                                             # carregando por horas é normal
+        cache.update({"2/2": 4})                                                        # limpando por mais de 3 h
+        self.n.tick(self.robot)
+        self.clock.t += 3 * 3600 + 5
+        self.n.tick(self.robot)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("Limpando há 3 h", self.sent[1][2])
+
     def test_failing_channel_does_not_break_the_others(self):
         calls = []
 

@@ -1,6 +1,6 @@
 // Service worker: o app abre mesmo sem rede (mostra a última tela) e pode ser instalado no celular.
 // A API nunca passa por aqui: dados do robô vêm sempre da rede. Páginas e scripts: rede primeiro, cache de reserva.
-const CACHE = "h50-shell-v1";
+const CACHE = "h50-shell-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 
