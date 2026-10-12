@@ -45,6 +45,13 @@ def decrypt(raw: bytes, model: str, did: str) -> dict:
     return json.loads(zlib.decompress(plain).decode("utf-8"))
 
 
+def encrypt(m: dict, model: str, did: str) -> bytes:
+    """Inverso de decrypt(): dict do mapa -> bytes do arquivo da nuvem. Usado só para gerar mapas SINTÉTICOS de teste."""
+    plain = zlib.compress(json.dumps(m, ensure_ascii=False).encode("utf-8"))
+    ct = aes.cbc_encrypt(plain, map_key(model, did), IV)
+    return json.dumps({"version": 2, "data": base64.b64encode(ct).decode()}).encode()
+
+
 def grid(m: dict) -> bytes:
     """Grade crua (width*height bytes, linha 0 = menor y)."""
     g = zlib.decompress(base64.b64decode(m["map_data"]))

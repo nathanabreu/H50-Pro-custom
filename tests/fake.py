@@ -1,12 +1,31 @@
 """Robô falso para testes: responde com os valores de um dump real e imita os limites do aparelho."""
 
+import atexit
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 from h50console.miio import MiioError
 
-FIXTURES = Path(__file__).with_name("fixtures")
+REAL_FIXTURES = Path(__file__).with_name("fixtures")        # dados REAIS do autor: ficam fora do git
+NEEDED = ("dump-full.json", "dump.json", "scan.json", "clean-record-cloud.json", "map-v2.bin")
 DID = "1000000001"   # did fictício das respostas simuladas
+
+
+def _pick_fixtures() -> Path:
+    """Dados reais se existirem (e H50_SYNTHETIC != 1); senão gera os SINTÉTICOS numa pasta temporária.
+    Assim o CI público e quem clona o projeto rodam a suíte inteira, sem nenhum teste pulado."""
+    if os.environ.get("H50_SYNTHETIC") != "1" and all((REAL_FIXTURES / n).exists() for n in NEEDED):
+        return REAL_FIXTURES
+    from . import synth
+    tmp = tempfile.mkdtemp(prefix="h50-synth-")
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+    return synth.build(Path(tmp))
+
+
+FIXTURES = _pick_fixtures()
 
 
 def load_dump() -> dict[str, object]:

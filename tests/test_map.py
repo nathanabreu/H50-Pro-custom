@@ -7,6 +7,15 @@ from .fake import FIXTURES
 BLOB = FIXTURES / "map-v2.bin"
 
 
+class Roundtrip(unittest.TestCase):
+    def test_encrypt_decrypt_roundtrip_with_a_fake_device(self):
+        m = {"width": 2, "height": 2, "map_data": "x", "k": [1, 2, 3], "nome": "Cômodo"}
+        blob = mapdecode.encrypt(m, "xiaomi.vacuum.ov42gl", "1000000001")
+        self.assertEqual(mapdecode.decrypt(blob, "xiaomi.vacuum.ov42gl", "1000000001"), m)
+        with self.assertRaises(ValueError):
+            mapdecode.decrypt(blob, "xiaomi.vacuum.ov42gl", "1000000002")      # outro did = outra chave
+
+
 @unittest.skipUnless(BLOB.exists(), "mapa real ausente (tests/fixtures/map-v2.bin)")
 class MapDecode(unittest.TestCase):
     @staticmethod
