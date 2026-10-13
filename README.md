@@ -37,6 +37,28 @@ python -m h50console            # http://127.0.0.1:8050
 | **Manutenção** | Espaço e retenção, otimizar bancos, **acessos ao painel**, **backup criptografado** e restauração, logs, pacote de diagnóstico |
 | **Laboratório** | Propriedades ao vivo, **mudanças com anotações**, varredura de piids, ações por risco, objetos da nuvem |
 
+## Usar com um assistente de IA (MCP)
+
+O H50 Console tem um servidor **MCP** para você perguntar e mandar em linguagem natural ("como está o robô?", "limpe a cozinha",
+"quando troco a escova?"). Ele só conversa com o painel que já está rodando (herda senha, perfis e bloqueios) e não conhece o token do robô.
+
+```bash
+# com o painel rodando; a senha pode ser a do administrador (consulta e comanda) ou a do perfil somente leitura (só consulta)
+set H50_MCP_PASSWORD=sua-senha
+python -m h50console mcp
+```
+
+Exemplo para o Claude Code, a partir da pasta do projeto (no Claude Desktop o bloco `mcpServers` equivalente usa `command`, `args`, `env` e `cwd`):
+
+```bash
+claude mcp add h50 --env H50_MCP_PASSWORD=sua-senha --env H50_MCP_URL=http://127.0.0.1:8050 -- python -m h50console mcp
+```
+
+Ferramentas: `robots_list`, `robot_status`, `consumables`, `cleaning_history`, `rooms`, `settings`, `faults` (leitura) e
+`clean_rooms`, `robot_action`, `set_setting` (só administrador). Tudo o que **move o robô ou muda um ajuste exige `confirm: true`**:
+sem isso a ferramenta apenas descreve o que faria, para o assistente confirmar com você antes. Dica: crie a senha do perfil
+somente leitura (Configurações) e use-a no MCP se você só quer consultas.
+
 ## Acesso de fora de casa
 
 Três jeitos, combináveis (detalhes em [`docs/DEPLOY.md`](docs/DEPLOY.md)): app numa máquina ligada em casa + **Tailscale/VPN**;

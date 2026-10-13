@@ -21,3 +21,5 @@
 - Acessibilidade: foco visível, link "pular para o conteúdo", `aria-live` nos avisos, rótulo no mapa, respeita "reduzir movimento".
 - Servidor: limite de 32 conexões de eventos (SSE) simultâneas; recusas antecipadas descartam o corpo pendente (evita resposta perdida).
 - Notificações: aviso de robô parado/pausado fora da base por 30 min (ou limpando há mais de 3 h). Sessão da nuvem gravada com permissão 0600.
+- Mapa: tipo de móvel 1400 corrigido para **Mesa**. Editor de mapa em rascunho (móveis, paredes virtuais, renomear cômodo) com backup do mapa; ainda não grava no robô.
+- Servidor MCP (`python -m h50console mcp`): um assistente de IA consulta e gerencia o robô; comandos exigem confirmação explícita; respeita o perfil somente leitura.

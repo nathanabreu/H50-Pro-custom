@@ -196,8 +196,8 @@ O app reflete na LAN em cerca de 10 s. **Rótulos do app ≠ nomes da spec:** a 
 | 2/40 `rooms` | Cômodos da limpeza em andamento. Some quando ela termina |
 
 | **2/40 durante uma rotina** (16:37, "Pelos gatos") | `user_define` com id, nome e `user_data` = `[[mode, mop, fan, water, clean_count, more, ai, clean_path, mode_data], [2, 1, 2, 2, 1, 0, 0, 3, [[retângulo em mm], …]]]`. O 2/5 fica 7 e o **2/43 fica 0** |
-| **2/102 móveis** (sofá, cama e liteira adicionados) | `{"id", "type": 1220/1400/1740, "rid": 3 ou 248}`. Sem posição. O 248 parece significar "fora dos cômodos" |
-| **Móveis: tipos** | **1740 = liteira** (confirmado: sumiu do 2/102 ao ser removida). 1220 = sofá (fora da borda, rid 248) e 1400 = cama (dentro da Sala, rid 3), inferidos pela posição | `catalog.FURNITURE_TYPES` |
+| **2/102 móveis** (sofá, mesa e liteira adicionados) | `{"id", "type": 1220/1400/1740, "rid": 3 ou 248}`. Sem posição. O 248 parece significar "fora dos cômodos" |
+| **Móveis: tipos** | **1740 = liteira** (confirmado: sumiu do 2/102 ao ser removida). 1220 = sofá (fora da borda, rid 248) e 1400 = **mesa** (o usuário corrigiu: eu tinha inferido "cama"; rid 3 = dentro da Sala), inferidos pela posição | `catalog.FURNITURE_TYPES` |
 | **Limpeza interrompida** (rotina parada no app após cerca de 3 min) | 2/5 e 2/40 zeram na hora da parada; ao fim da base, o 2/17 vira o início (16:37:43). **O robô registra limpezas interrompidas**; a pausa de 5 s às 15:59 não foi registrada | O histórico guarda o nome da rotina (`raw_label = custom:<nome>`) |
 | Paredes virtuais | **Não** aparecem no 2/13 nem no 2/14; só muda o 10/13 (backup do mapa) |
 

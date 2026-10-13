@@ -76,6 +76,14 @@ que move o robô. Marque cada item e anote o que fugir do esperado (a mensagem d
 - [ ] **Métricas**: `set H50_METRICS_TOKEN=um-valor-longo` e abra `curl -H "Authorization: Bearer um-valor-longo" http://127.0.0.1:8050/metrics`.
 - [ ] **Notificação "parado"**: marque o evento em Notificações; pause o robô por 30 min e confira o aviso.
 
+- [ ] **Editor de mapa (rascunho)**: Início → Editar mapa. Desenhe uma parede (2 toques), coloque um móvel, apague, desfaça. Confira que o robô
+  e o app oficial **não mudam nada**. "Fazer backup do mapa" cria um arquivo em `data
+obots\<id>\mapackups`. O móvel antes chamado "Cama" agora é "Mesa".
+
+- [ ] **MCP**: com o painel rodando, `set H50_MCP_PASSWORD=<senha do perfil somente leitura>` e adicione o servidor no seu assistente
+  (README, "Usar com um assistente de IA"). Peça "como está o robô?" (funciona) e "mande voltar à base" (recusa: só leitura). Depois com a senha de
+  administrador: "mande voltar à base" deve **pedir confirmação** antes de executar.
+
 ## O que me mandar quando algo falhar
 O texto exato do erro (tela ou toast), em qual passo, e as últimas linhas de **Manutenção → Log do app**.
 Se for dúvida de segurança ou algo estranho no robô, **Manutenção → Pacote de diagnóstico** (não tem token, DID nem IP completo).

@@ -130,6 +130,32 @@ class WebTests(unittest.TestCase):
             if line and not line.startswith("#"):
                 float(line.rsplit(" ", 1)[1])                      # todo valor é número
 
+    def test_map_edit_draft_and_backup(self):
+        from h50console import mapdecode
+        from . import synth
+        st, d = self.call("POST", "/api/map/edit/preview", {"ops": []})
+        self.assertEqual(st, 404)                                              # ainda sem mapa baixado
+        self.robot.map_dir.mkdir(parents=True, exist_ok=True)
+        (self.robot.map_dir / "latest.bin").write_bytes(mapdecode.encrypt(synth.synthetic_map(), synth.MODEL, synth.DID))
+        try:
+            ops = [{"op": "add_furniture", "type": 1400, "cx": 0, "cy": -3000}]
+            st, d = self.call("POST", "/api/map/edit/preview", {"ops": ops})
+            self.assertEqual((st, len(d["map"]["furniture"]), d["saved_to_robot"]), (200, 3, False))
+            self.assertTrue(d["changes"][0].startswith("+ móvel"))
+            st, d = self.call("POST", "/api/map/edit/preview", {"ops": [{"op": "remove_wall", "id": 99}]})
+            self.assertEqual(st, 400)                                          # operação inválida: mensagem clara
+            self.assertIn("operação 1", d["error"])
+            st, d = self.call("POST", "/api/map/edit/save", {"ops": ops})
+            self.assertEqual(st, 501)                                          # gravação no robô ainda não existe
+            st, d = self.call("POST", "/api/map/backup")
+            self.assertEqual(st, 200)
+            self.assertEqual(len(d["backups"]), 1)
+            self.assertEqual(self.call("GET", "/api/map/backups")[1][0]["name"], d["name"])
+        finally:
+            (self.robot.map_dir / "latest.bin").unlink(missing_ok=True)
+            for f in (self.robot.map_dir / "backups").glob("*"):
+                f.unlink()
+
     def test_state(self):
         st, d = self.call("GET", "/api/state")
         self.assertEqual(st, 200)

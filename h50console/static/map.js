@@ -1,7 +1,7 @@
 // Desenho do mapa (canvas, JS puro). Entrada: /api/map (mapdecode.for_ui).
 // Mundo em mm, x para a direita e y para cima; grade com linha 0 = menor y (por isso a inversão).
 (function () {
-  const FURN = { 1220: "Sofá", 1400: "Cama", 1740: "Liteira" };
+  const FURN = { 1220: "Sofá", 1400: "Mesa", 1740: "Liteira" };
   const ROOM_VARS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s-other"];
 
   async function inflate(b64) {
@@ -20,7 +20,7 @@
     return m.slice(0, 3);
   }
 
-  async function render(host, m, { onHover, onRoomClick, selected, heat, dim } = {}) {
+  async function render(host, m, { onHover, onRoomClick, selected, heat, dim, onPoint, marks } = {}) {
     const grid = m._grid || (m._grid = await inflate(m.grid_zlib_b64));
     const sel = selected && selected.size ? selected : null;   // com seleção, o resto fica apagado
     const faint = dim && !sel;                                  // mapa de calor: cômodos quase apagados
@@ -127,6 +127,12 @@
       g.beginPath(); g.arc(X(x), Y(y), r, 0, 2 * Math.PI); g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent"); g.fill();
     }
 
+    // marcadores do editor (mm): círculo com cruz
+    for (const [x, y] of marks || []) {
+      g.beginPath(); g.arc(X(x), Y(y), 6, 0, 2 * Math.PI);
+      g.fillStyle = "rgba(47,111,222,.35)"; g.fill(); g.strokeStyle = "#2f6fde"; g.lineWidth = 2; g.stroke();
+    }
+
     // tooltip: cômodo sob o cursor
     const names = Object.fromEntries(m.rooms.map((r) => [r.id, r.name]));
     cv.addEventListener("pointermove", (e) => {
@@ -137,6 +143,14 @@
       onHover && onHover(e, v === 1 ? "parede" : names[v] || null, xm, ym);
     });
     cv.addEventListener("pointerleave", () => onHover && onHover(null));
+    if (onPoint) {      // editor: o clique devolve o ponto em mm (mundo), com precisão menor que o pixel da grade
+      cv.style.cursor = "crosshair";
+      cv.addEventListener("click", (e) => {
+        const b = cv.getBoundingClientRect();
+        const px = e.clientX - b.left, py = e.clientY - b.top;
+        onPoint(Math.round(ox + (px / scale + c0 - 0.5) * res), Math.round(oy + (r1 + 0.5 - py / scale) * res), e);
+      });
+    }
     if (onRoomClick) {
       cv.style.cursor = "pointer";
       cv.addEventListener("click", (e) => {

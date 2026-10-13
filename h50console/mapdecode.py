@@ -14,7 +14,7 @@ JSON do mapa (observado):
     pile_x/pile_y/pile_yaw: base; position {x, y, yaw}: robô
     room_attrs[]: id, room_name, name_pos_x/y, ajustes por cômodo (fan/water/clean_times…)
     fb_walls[]: paredes virtuais {id, wall_points: [x1, y1, x2, y2]}
-    furniture[]: {id, type, pos: [x1,y1,…,x4,y4]} (1220 sofá, 1400 cama, 1740 liteira)
+    furniture[]: {id, type, pos: [x1,y1,…,x4,y4]} (1220 sofá, 1400 mesa, 1740 liteira)
     paths.points: JSON string com a trajetória [{x, y, type, sweep_mop_mode, yaw}]
     map_3d_info[]: contornos por cômodo {room_id, lines: [{type, segment: [x1,y1,x2,y2]}]}
 """
@@ -74,6 +74,7 @@ def for_ui(m: dict) -> dict:
                    "fan": r.get("fan_level"), "water": r.get("water_level"), "times": r.get("clean_times"),
                    "mode": r.get("clean_mode")} for r in rooms.values()],
         "walls": [w["wall_points"] for w in m.get("fb_walls", [])],
+        "wall_ids": [w.get("id") for w in m.get("fb_walls", [])],
         "furniture": [{"id": f["id"], "type": f["type"], "pos": f["pos"]} for f in m.get("furniture", [])],
         "path": path,
         "config": m.get("current_cleaning_config"),

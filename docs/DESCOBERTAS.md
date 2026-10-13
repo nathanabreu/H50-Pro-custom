@@ -58,7 +58,7 @@ Nome do aparelho, paredes virtuais, zonas, móveis (posição) e **configuraçõ
   com `k = model[-16:]` e IV `ABCDEF1234123412` (engenharia reversa do plugin do Xiaomi Home pelo projeto *devbis/xiaomi-vac*).
 - JSON: `map_data` (grade `largura×altura`, **50 mm/pixel**, pixel = id do cômodo, 1 = parede), `origin_x/y`, base, `position`,
   `room_attrs` (nome, posição do rótulo, sucção/água/passadas por cômodo), `fb_walls` (paredes virtuais),
-  `furniture` (`type` 1220 sofá, 1400 cama, 1740 liteira; `pos` = 4 cantos), `paths.points` (tipo 1 limpando, 0 deslocamento).
+  `furniture` (`type` 1220 sofá, 1400 mesa, 1740 liteira; `pos` = 4 cantos), `paths.points` (tipo 1 limpando, 0 deslocamento).
 - `10/13` (backup do mapa) muda quando o mapa é editado no app; `10/5` também muda ao fim de toda limpeza (não serve de aviso).
 
 - **Backup do mapa**: `10/13` lista `backup_map_arr`; o objeto (`<uid>/<did>/8`) baixa e decifra no mesmo formato do mapa atual

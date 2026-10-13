@@ -289,8 +289,8 @@ CONSUMABLE_PROPS = {  # item -> (prop de %, prop de horas restantes)
 }
 
 # Móveis (2/102 "type"). 1740 confirmado removendo a liteira no app; 1220/1400 inferidos pela
-# posição (sofá fora da borda da Sala -> rid 248; cama dentro -> rid 3). rid 248 = fora dos cômodos.
-FURNITURE_TYPES = {1220: "Sofá", 1400: "Cama", 1740: "Liteira"}
+# posição (sofá fora da borda da Sala -> rid 248; mesa dentro -> rid 3; 1400 = mesa, confirmado pelo dono). rid 248 = fora dos cômodos.
+FURNITURE_TYPES = {1220: "Sofá", 1400: "Mesa", 1740: "Liteira"}
 FURNITURE_OUTSIDE_RID = 248
 
 # ---------------------------------------------------------------------------

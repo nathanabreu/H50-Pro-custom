@@ -119,6 +119,10 @@ class App:
             ("POST", r"/api/cloud/logout", self.cloud_logout),
             ("POST", r"/api/cloud/map", self.cloud_map),
             ("GET", r"/api/map", self.map_latest),
+            ("GET", r"/api/map/backups", self.map_backups),
+            ("POST", r"/api/map/backup", self.map_backup),
+            ("POST", r"/api/map/edit/preview", self.map_edit_preview),
+            ("POST", r"/api/map/edit/save", self.map_edit_save),
             ("POST", r"/api/cloud/history", self.cloud_history),
         ]
 
@@ -557,6 +561,46 @@ class App:
         if m is None:
             raise ApiError(404, "nenhum mapa baixado ainda")
         return m
+
+    # -- edição do mapa (rascunho; nada é gravado no robô) -----------------------------------------------
+    MAP_BACKUPS_KEEP = 20
+
+    def _raw_map(self) -> dict:
+        from . import mapdecode
+        f = (self._map_dir() or Path("data/map")) / "latest.bin"
+        if not f.exists():
+            raise ApiError(404, "nenhum mapa baixado ainda: abra o Início com a nuvem conectada")
+        return mapdecode.decrypt(f.read_bytes(), self.robot.cfg.model if self.robot else catalog.MODEL, self._did())
+
+    def map_backups(self, **_):
+        d = (self._map_dir() or Path("data/map")) / "backups"
+        files = sorted(d.glob("map-*.bin"), reverse=True) if d.exists() else []
+        return [{"name": f.name, "bytes": f.stat().st_size, "at": int(f.stat().st_mtime)} for f in files]
+
+    def map_backup(self, **_):
+        """Copia o mapa baixado (cifrado, como veio da nuvem) para backups/. É a rede de segurança antes de qualquer edição."""
+        base = self._map_dir() or Path("data/map")
+        src = base / "latest.bin"
+        if not src.exists():
+            raise ApiError(404, "nenhum mapa baixado ainda: abra o Início com a nuvem conectada")
+        d = base / "backups"
+        d.mkdir(parents=True, exist_ok=True)
+        name = time.strftime("map-%Y%m%d-%H%M%S.bin")
+        (d / name).write_bytes(src.read_bytes())
+        for old in sorted(d.glob("map-*.bin"), reverse=True)[self.MAP_BACKUPS_KEEP:]:
+            old.unlink(missing_ok=True)
+        return {"name": name, "backups": self.map_backups()}
+
+    def map_edit_preview(self, body, **_):
+        """Aplica as operações a uma cópia do mapa e devolve o resultado + a lista de mudanças. Não grava nada."""
+        from . import mapdecode, mapedit
+        current = self._raw_map()
+        new = mapedit.apply_ops(current, (body or {}).get("ops") or [])
+        return {"map": mapdecode.for_ui(new), "changes": mapedit.diff(current, new), "saved_to_robot": False}
+
+    def map_edit_save(self, **_):
+        raise ApiError(501, "gravar o mapa no robô ainda não foi validado (formato de escrita desconhecido). "
+                            "Por enquanto o editor só monta e mostra o rascunho. Veja docs/BACKLOG.md.")
 
     def raw(self, op, body, **_):
         if not self.raw_enabled:

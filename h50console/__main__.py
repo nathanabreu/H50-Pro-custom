@@ -2,6 +2,7 @@
 py -m h50console backup ARQUIVO     gera um backup criptografado (senha em H50_BACKUP_PASSPHRASE ou perguntada)
 py -m h50console restore ARQUIVO    restaura um backup (com o app PARADO)
 py -m h50console reset-password     esqueci a senha do painel (com o app PARADO): o próximo início gera um código novo
+py -m h50console mcp                servidor MCP (stdio) para um assistente de IA consultar e gerenciar o robô
 py -m h50console version
 """
 
@@ -86,8 +87,12 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("restore", help="restaura um backup (com o app parado)")
     r.add_argument("file")
     sub.add_parser("reset-password", help="esqueci a senha do painel (com o app parado)")
+    sub.add_parser("mcp", help="servidor MCP por stdin/stdout (H50_MCP_URL, H50_MCP_PASSWORD)")
     sub.add_parser("version")
     args = ap.parse_args(argv)
+    if args.cmd == "mcp":                               # não carrega a config do painel: só precisa de URL e senha
+        from . import mcp
+        return mcp.main()
     cfg = Config.from_env()
 
     if args.cmd == "version":
